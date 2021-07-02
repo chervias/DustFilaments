@@ -1,0 +1,2 @@
+void query_polygon_wrapper(double* x_vert, double* y_vert, double* z_vert, int hsize, int nside, long* ipix_arr, int* nipix, int* sucess);
+void localtriad_wrapper(long* ipix_final, int nipix, int nside, double* localtriad, int Nthreads);
