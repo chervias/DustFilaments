@@ -6,7 +6,7 @@ H_PLANCK =  6.6260755e-34
 K_BOLTZ = 1.380658e-23
 T_CMB =  2.72548
 
-def get_centers(galactic_plane,null_Gplane,fixed_distance,dust_template,mask_file,nside,Nfil,size):
+def get_centers(galactic_plane,null_Gplane,fixed_distance,dust_template,nside,Nfil,size,mask_file):
 	# recipe to generate random centers
 	# Usually this will be done in spherical coordinates
 	if galactic_plane:
@@ -17,8 +17,12 @@ def get_centers(galactic_plane,null_Gplane,fixed_distance,dust_template,mask_fil
 		map_original[map_original < 0.0] = 0.0
 		map_nside = hp.ud_grade(map_original,nside)
 		if null_Gplane:
-			mask = hp.read_map(mask_file,field=0) # we will degrade the mask to 512
-			mask = hp.ud_grade(mask,nside)
+			if mask_file not None:
+				mask = hp.read_map(mask_file,field=0) # we will degrade the mask to 512
+				mask = hp.ud_grade(mask,nside)
+			else:
+				print('You must provide a mask if you want to null the Galactic plane')
+				exit()
 			# you only want to mask the pixels that are = 0, everything >0 should be brought to 1
 			# because of this we use ceil
 			mask = np.ceil(mask)
@@ -26,10 +30,6 @@ def get_centers(galactic_plane,null_Gplane,fixed_distance,dust_template,mask_fil
 		# each pixel is mult by C --> Nfil = C*Sum(map)
 		C = Nfil / np.sum(map_nside)
 		number_fil = np.random.poisson(C*map_nside,12*nside**2)
-		# we need to upgrade number_fil to nside
-		#step = int(np.log(nside)/np.log(2.0) - np.log(512)/np.log(2.0))
-		# because we will assign to the children pixels, we need to transform to nested
-		#number_fil = hp.reorder(number_fil,r2n=True)
 		real_number = int(np.sum(number_fil))
 		centers	= np.zeros((real_number,3),dtype=np.double)
 		l_rand	 = np.random.uniform(0.15,1.0,real_number)
@@ -44,7 +44,6 @@ def get_centers(galactic_plane,null_Gplane,fixed_distance,dust_template,mask_fil
 				# continue since pixel n does not have any filament
 				continue
 		print('Real number of filaments is ',real_number,'counter',counter)
-		# set the number of fil to real fil
 		return real_number, np.ascontiguousarray(centers,dtype=np.double)
 	elif fixed_distance:
 		centers	= np.zeros((Nfil,3),dtype=np.double)
@@ -86,7 +85,7 @@ def dust_sed_Jysr(nu,beta,Tdust):
 	x = H_PLANCK*nu*1.e9/(K_BOLTZ*Tdust)
 	return (nu*1e9)**(beta+3.0)/(np.exp(x)-1.0)
 
-def get_beta_T(beta_template,T_template,nside,Nfil,centers,Nsigma):
+def get_beta_T(beta_template,T_template,nside,Nfil,centers,sigma_rho):
 	# load maps from data
 	beta_map_original = hp.read_map(beta_template,field=(0,1))
 	beta_map_nside = hp.ud_grade(beta_map_original,nside)
@@ -97,7 +96,6 @@ def get_beta_T(beta_template,T_template,nside,Nfil,centers,Nsigma):
 	# New method
 	# From Pelgrims et al 2021
 	# Eq 14 and 15
-	sigma_rho = Nsigma
 	random_rho = np.random.normal(loc=0.0,scale=sigma_rho,size=Nfil)
 	# random rho CANNOT go under -1, if it does then beta_dust = nan
 	random_rho = np.clip(random_rho,-0.99,None)
@@ -109,13 +107,13 @@ def get_beta_T(beta_template,T_template,nside,Nfil,centers,Nsigma):
 	T_array = T_map_nside[0][pixels]
 	return np.ascontiguousarray(beta_array),np.ascontiguousarray(T_array)
 
-def get_FilPop(Nfil,theta_LH_RMS,size_ratio,size_scale,slope,Bcube,size,seed,alpha,beta,nside,dust_template,beta_template,T_template,mask_file,ell_limit,Nsigma,Nthreads,fixed_distance=False,fixed_size=False,galactic_plane=False,null_Gplane=False):
+def get_FilPop(Nfil,theta_LH_RMS,size_ratio,size_scale,slope,Bcube,size,seed,alpha,beta,nside,dust_template,beta_template,T_template,ell_limit,sigma_rho,Nthreads=8,mask_file=None,fixed_distance=False,fixed_size=False,galactic_plane=False,null_Gplane=False):
 	Npix_box = int(Bcube.shape[0])
 	max_length		= 1.0
 	nu_index = +0.122
 	np.random.seed(seed)
 	theta_LH_RMS_radians = np.radians(theta_LH_RMS)
-	realNfils, centers = get_centers(galactic_plane,null_Gplane,fixed_distance,dust_template,mask_file,nside,Nfil,size) # this method will determine the total number of filaments, which is different if we do the poisson thing
+	realNfils, centers = get_centers(galactic_plane,null_Gplane,fixed_distance,dust_template,nside,Nfil,size,mask_file) # this method will determine the total number of filaments, which is different if we do the poisson thing
 	# get angles now is on C
 	random_vectors  = np.zeros((realNfils,3)) ; random_vectors[:,0] = 1.0 
 	theta_LH		= np.fabs(np.random.normal(loc=0,scale=theta_LH_RMS_radians,size=(realNfils)))
@@ -126,6 +124,6 @@ def get_FilPop(Nfil,theta_LH_RMS,size_ratio,size_scale,slope,Bcube,size,seed,alp
 	print("I have calculated the centers, angles, sizes")
 	mask,theta_a = Reject_Big_Filaments(sizes, thetaL, size_ratio, centers, realNfils, ell_limit, Nthreads, size_scale, nu_index)
 	fpol0 = get_fpol(alpha,beta,realNfils,sizes,size_scale)
-	beta_array,T_array = get_beta_T(beta_template,T_template,nside,realNfils,centers,Nsigma)
+	beta_array,T_array = get_beta_T(beta_template,T_template,nside,realNfils,centers,sigma_rho)
 	final_Nfils = int(realNfils)
 	return centers, angles, sizes, psi_LH, thetaH, thetaL, fpol0, beta_array, T_array, final_Nfils, mask, theta_a
