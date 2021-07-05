@@ -1,0 +1,28 @@
+nside: 2048
+theta_LH_RMS: 10.0 # in degrees
+size_scale: 0.01 # minimum size in pc
+size_ratio: 0.16
+slope: 2.445
+Nfil: 500000
+size_box: 100.0
+label: 100pc_Bcube4_LR71_gnilc-unires_SkipBcube_DiffSlopes_FullSky
+resolution: 25
+alpha: 0.0918475915109144
+beta: 0.27672963795683836
+freqs: [ 353. , 217. ]
+ell_limit: 50
+sigma_rho: 0.15
+Nthreads: 8
+seed_population: 2345
+seed_magfield: 12345
+Npixels_magfield: 256
+skip_Bcube: True # True if you want to apply the H field of the center of the filament to the entire filament (not interpolating), False if you want to interpolate at every point inside the filament
+method: 4
+galactic_plane: True # True if you want to follow a template (in this case you must provide dust_template), False if you want to make a uniform density sphere
+null_Gplane: True # True if you want to apply a mask to make a partial sky (in this case you must provide mask_file), False if you want to run the full sky
+mask_file: /home/chervias/CMB-work/Filaments/3dfilament-project-healpix/output/maskI_LR71_Restricted_ns2048.fits
+dust_template: /home/chervias/CMB-work/Planck_data/COM_CompMap_IQU-thermaldust-gnilc-unires_2048_R3.00.fits
+beta_template: /home/chervias/CMB-work/Planck_data/COM_CompMap_Dust-GNILC-Model-Spectral-Index_2048_R2.01.fits
+T_template: /home/chervias/CMB-work/Planck_data/COM_CompMap_Dust-GNILC-Model-Temperature_2048_R2.01.fits
+path_Bcube: /home/chervias/CMB-work/Filaments/3dfilament-project-healpix/data/Bcube_Galactic_large-scale_100pc_JnFmodel_Npix256.npz
+outdir: /home/chervias/CMB-work/Filaments/3dfilament-project-healpix/test_ns2048

@@ -1,4 +1,4 @@
-from DustFilaments.FilamentPaint import Get_Angles,Reject_Big_Filaments
+from DustFilaments.FilamentPaint import Get_Angles, Reject_Big_Filaments
 import numpy as np
 import healpy as hp
 
@@ -12,12 +12,16 @@ def get_centers(galactic_plane,null_Gplane,fixed_distance,dust_template,nside,Nf
 	if galactic_plane:
 		# Now the centers will be defined by a template map
 		# first normalize the map to the total number of filaments
-		map_original = hp.read_map(dust_template,field=0)
-		# make sure there are no 0s in this map
-		map_original[map_original < 0.0] = 0.0
-		map_nside = hp.ud_grade(map_original,nside)
+		if dust_template is not None:
+			map_original = hp.read_map(dust_template,field=0)
+			# make sure there are no 0s in this map
+			map_original[map_original < 0.0] = 0.0
+			map_nside = hp.ud_grade(map_original,nside)
+		else:
+			print('You must provide a dust_template if you want galactic_plane=True ')
+			exit()
 		if null_Gplane:
-			if mask_file not None:
+			if mask_file is not None:
 				mask = hp.read_map(mask_file,field=0) # we will degrade the mask to 512
 				mask = hp.ud_grade(mask,nside)
 			else:
@@ -31,37 +35,36 @@ def get_centers(galactic_plane,null_Gplane,fixed_distance,dust_template,nside,Nf
 		C = Nfil / np.sum(map_nside)
 		number_fil = np.random.poisson(C*map_nside,12*nside**2)
 		real_number = int(np.sum(number_fil))
-		centers	= np.zeros((real_number,3),dtype=np.double)
-		l_rand	 = np.random.uniform(0.15,1.0,real_number)
-		radii_arr = (0.45*size)*l_rand**(1.0/3.0)
+		indices = np.zeros((real_number),dtype=np.int)
 		counter = 0
-		for n in range(12*nside**2):
+		for n in range(12 * nside **2):
 			if number_fil[n] > 0:
-				for k in range(number_fil[n]):
-					centers[counter,:] = radii_arr[counter] * np.array(hp.pix2vec(nside,n,nest=False))
-					counter += 1 
+				indices[counter:counter+number_fil[n]] = int(n)
+				counter += number_fil[n]
 			else:
-				# continue since pixel n does not have any filament
 				continue
+		if not fixed_distance:
+			l_rand	 = np.random.uniform(0.15,1.0,real_number)
+			centers = (0.45*size)*l_rand**(1.0/3.0) * np.array(hp.pix2vec(nside, indices, nest=False))
+		else:
+			centers = 0.4 * size * np.array(hp.pix2vec(nside, indices, nest=False))
 		print('Real number of filaments is ',real_number,'counter',counter)
-		return real_number, np.ascontiguousarray(centers,dtype=np.double)
-	elif fixed_distance:
-		centers	= np.zeros((Nfil,3),dtype=np.double)
-		radii_random	= np.ones(Nfil) * 0.4*size
-		phi_random		= 2*np.pi*np.random.uniform(0.0,1.0,Nfil)
-		theta_random	= np.arccos(1.0 - 2*np.random.uniform(0.0,1.0,Nfil))
-		centers[:,0]	= radii_random*np.sin(theta_random)*np.cos(phi_random)
-		centers[:,1]	= radii_random*np.sin(theta_random)*np.sin(phi_random)
-		centers[:,2]	= radii_random*np.cos(theta_random)
-		return int(Nfil), np.ascontiguousarray(centers,dtype=np.double)
+		return real_number, np.ascontiguousarray(centers.T,dtype=np.double)
 	else:
 		centers = np.zeros((Nfil,3),dtype=np.double)
-		l_rand	 = np.random.uniform(0.1,1.0,Nfil)
-		u_rand   = np.random.uniform(-1.0,1.0,Nfil)
-		phi_rand = np.random.uniform(0.0,2.0*np.pi,Nfil)
-		centers[:,0] = (0.45*size)*l_rand**(1.0/3.0)*np.sqrt(1. - u_rand**2)*np.cos(phi_rand)
-		centers[:,1] = (0.45*size)*l_rand**(1.0/3.0)*np.sqrt(1. - u_rand**2)*np.sin(phi_rand)
-		centers[:,2] = (0.45*size)*l_rand**(1.0/3.0)*u_rand
+		if not fixed_distance:
+			l_rand	 = np.random.uniform(0.1,1.0,Nfil)
+			u_rand   = np.random.uniform(-1.0,1.0,Nfil)
+			phi_rand = np.random.uniform(0.0,2.0*np.pi,Nfil)
+			centers[:,0] = (0.45*size)*l_rand**(1.0/3.0)*np.sqrt(1. - u_rand**2)*np.cos(phi_rand)
+			centers[:,1] = (0.45*size)*l_rand**(1.0/3.0)*np.sqrt(1. - u_rand**2)*np.sin(phi_rand)
+			centers[:,2] = (0.45*size)*l_rand**(1.0/3.0)*u_rand
+		else:
+			u_rand   = np.random.uniform(-1.0,1.0,Nfil)
+			phi_rand = np.random.uniform(0.0,2.0*np.pi,Nfil)
+			centers[:,0] = (0.4*size) * np.sqrt(1. - u_rand**2)*np.cos(phi_rand)
+			centers[:,1] = (0.4*size) * np.sqrt(1. - u_rand**2)*np.sin(phi_rand)
+			centers[:,2] = (0.4*size) * u_rand
 		return int(Nfil), np.ascontiguousarray(centers,dtype=np.double)
 
 def get_sizes(Nfil,fixed_size,size_scale,slope,size_ratio):
@@ -107,7 +110,7 @@ def get_beta_T(beta_template,T_template,nside,Nfil,centers,sigma_rho):
 	T_array = T_map_nside[0][pixels]
 	return np.ascontiguousarray(beta_array),np.ascontiguousarray(T_array)
 
-def get_FilPop(Nfil,theta_LH_RMS,size_ratio,size_scale,slope,Bcube,size,seed,alpha,beta,nside,dust_template,beta_template,T_template,ell_limit,sigma_rho,Nthreads=8,mask_file=None,fixed_distance=False,fixed_size=False,galactic_plane=False,null_Gplane=False):
+def get_FilPop(Nfil,theta_LH_RMS,size_ratio,size_scale,slope,Bcube,size,seed,alpha,beta,nside,beta_template,T_template,ell_limit,sigma_rho,Nthreads=8,dust_template=None,mask_file=None,fixed_distance=False,fixed_size=False,galactic_plane=False,null_Gplane=False):
 	Npix_box = int(Bcube.shape[0])
 	max_length		= 1.0
 	nu_index = +0.122

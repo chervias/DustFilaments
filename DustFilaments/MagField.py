@@ -7,7 +7,7 @@ def get_MagField(size,pixels=256,seed=1,path_cube=None,rms_random=3.0,):
 	# seed is the random seed
 	# path_cube, if provided, must contain a npz file with the large-scale B cube, with the label Bcube. This must have uG units
 	# rms_random is the rms of the isotropic random component we want to generate
-	if path_cube not None:
+	if path_cube is not None:
 		Bcube_ls = np.load(path_cube)['Hcube'] # this is in [iz,iy,ix] order
 		assert pixels == Bcube_ls.shape[0], 'The large-scale Hcube is not %i^3 pixels'%pixels
 	size3d 					= np.array([size,size,size])
