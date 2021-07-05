@@ -3,7 +3,7 @@ theta_LH_RMS: 10.0 # in degrees
 size_scale: 0.01 # minimum size in pc
 size_ratio: 0.16
 slope: 2.445
-Nfil: 500000
+Nfil: 100000
 size_box: 100.0
 label: 100pc_Bcube4_LR71_gnilc-unires_SkipBcube_DiffSlopes_FullSky
 resolution: 25
