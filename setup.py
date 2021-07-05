@@ -1,4 +1,3 @@
-import os
 from setuptools import setup, Extension
 
 PACKAGE_NAME = 'DustFilaments'
