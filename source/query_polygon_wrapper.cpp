@@ -1,3 +1,4 @@
+#include <stdio.h> 
 #include <healpix_cxx/healpix_base.h>
 #include <healpix_cxx/fitshandle.h>
 #include <healpix_cxx/healpix_map.h>
