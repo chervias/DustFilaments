@@ -8,7 +8,7 @@ sources = ['source/FilamentPaint.c','source/FilamentPaint_mod.c','source/query_p
 include_dirs = ['source'],
 libraries=['gsl','healpix_cxx','cxxsupport','c_utils'],
 library_dirs = ["lib"],
-extra_compile_args=['-fPIC','-Wall','-g','-fopenmp'],
+extra_compile_args=['-fPIC','-Wall','-g','-fopenmp','-std=c99'],
 extra_link_args=['-fopenmp'],
 )
 
