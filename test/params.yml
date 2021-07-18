@@ -17,7 +17,6 @@ seed_population: 2345
 seed_magfield: 12345
 Npixels_magfield: 256
 skip_Bcube: True # True if you want to apply the H field of the center of the filament to the entire filament (not interpolating), False if you want to interpolate at every point inside the filament
-method: 4
 galactic_plane: True # True if you want to follow a template (in this case you must provide dust_template), False if you want to make a uniform density sphere
 null_Gplane: True # True if you want to apply a mask to make a partial sky (in this case you must provide mask_file), False if you want to run the full sky
 mask_file: /home/chervias/CMB-work/Filaments/3dfilament-project-healpix/output/maskI_LR71_Restricted_ns2048.fits

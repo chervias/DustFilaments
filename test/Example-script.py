@@ -16,85 +16,70 @@ args = parser.parse_args()
 
 # read the yaml file
 stream = open(args.input, 'r')
-dictionary = yaml.load(stream)
-for key, value in dictionary.items():
-	if key == 'nside':
-		nside = int(value)
+dict = yaml.load(stream)
+
+freq_array = np.array(dict['freqs'],dtype=np.double)
+Nfreqs = len(freq_array)
+
+try:
+	Nthreads = int(dict['Nthreads'])
+except KeyError:
+	Nthreads = 8
+
+try:
+	seed_population = int(dict['seed_population'])
+except KeyError:
+	seed_population = 1234
+
+try:
+	seed_magfield = int(dict['seed_magfield'])
+except KeyError:
+	seed_magfield = 2345
+
+try:
+	Npixels_magfield = int(dict['Npixels_magfield'])
+except KeyError:
+	Npixels_magfield = 256
+
+try:
+	if dict['skip_Bcube']:
+		skip_Bcube = 1
 	else:
-		nside = 2048
-	if key == 'theta_LH_RMS':
-		theta_LH_RMS = float(value)
-	if key == 'size_scale':
-		size_scale = float(value)
-	if key == 'size_ratio':
-		size_ratio = float(value)
-	if key == 'slope':
-		slope = float(value)
-	if key == 'Nfil':
-		Nfil = int(value)
-	if key == 'size_box':
-		size_box = float(value)
-	if key == 'label':
-		label = str(value)
-	if key == 'resolution':
-		resolution = int(value)
-	if key == 'alpha':
-		alpha = float(value)
-	if key == 'beta':
-		beta = float(value)
-	if key == 'freqs':
-		freqs = np.array(value,dtype=np.double) 
-	if key == 'ell_limit':
-		ell_limit = float(value)
-	if key == 'sigma_rho':
-		sigma_rho = float(value)
-	if key == 'Nthreads':
-		Nthreads = int(value)
-	else:
-		Nthreads = 8
-	if key == 'seed_population':
-		seed_population = int(value)
-	if key == 'seed_magfield':
-		seed_magfield = int(value)
-	if key == 'Npixels_magfield':
-		Npixels_magfield = int(value)
-	else:
-		Npixels_magfield = 256
-	if key == 'skip_Bcube':
-		if value:
-			skip_Bcube = 1
-		else:
-			skip_Bcube = 0
-	if key == 'method':
-		method = int(value)
-	if key == 'mask_file':
-		mask_file = str(value)
-	if key == 'dust_template':
-		dust_template = str(value)
-	if key == 'beta_template':
-		beta_template = str(value)
-	if key == 'T_template':
-		T_template = str(value)
-	if key == 'path_Bcube':
-		path_Bcube = str(value)
-	if key == 'outdir':
-		outdir = str(value)
-	if key == 'galactic_plane':
-		galactic_plane = value
+		skip_Bcube = 0
+except KeyError:
+	skip_Bcube = 0
+
+try:
+	if dict['galactic_plane']:
+		galactic_plane = True
 	else:
 		galactic_plane = False
-	if key == 'null_Gplane':
-		null_Gplane = value
+except KeyError:
+	galactic_plane = False
+
+try:
+	if dict['null_Gplane']:
+		null_Gplane = True
 	else:
 		null_Gplane = False
-	if key == 'fixed_distance':
-		fixed_distance = value
+except KeyError:
+	null_Gplane = False
+
+try:
+	if dict['fixed_distance']:
+		fixed_distance = True
 	else:
 		fixed_distance = False
-	if key == 'fixed_size':
-		fixed_size = value
+except KeyError:
+	fixed_distance = False
+
+try:
+	if dict['fixed_size']:
+		fixed_size = True
 	else:
 		fixed_size = False
+except KeyError:
+	fixed_size = False
 
 shared_comm = MPI.COMM_WORLD
 size_pool = shared_comm.Get_size()
@@ -103,12 +88,12 @@ rank = shared_comm.Get_rank()
 start_time_first = time.time_ns()
 
 if rank==0:
-	output_tqumap	= '%s/tqumap_ns%s_%s_maa%s_sr%s_sl%s_min-size%s_ell-limit%i_%s'%(outdir,str(nside),str(Nfil),str(theta_LH_RMS).replace('.','p'),str(size_ratio).replace('.','p'),str(slope).replace('.','p'),str(size_scale).replace('.','p'),int(ell_limit),label)
+	output_tqumap	= '%s/DustFilaments_TQU_%s'%(str(dict['outdir']),str(dict['label']))
 
 size_magfield = (Npixels_magfield,Npixels_magfield,Npixels_magfield,3)
 
 if rank == 0:
-	Bcube = get_MagField(size_box,Npixels_magfield,seed_magfield,path_Bcube)
+	Bcube = get_MagField(float(dict['size_box']),Npixels_magfield,seed_magfield,str(dict['path_Bcube']))
 else:
 	Bcube = np.empty(size_magfield,dtype=np.double)
 shared_comm.Bcast(Bcube, root=0)
@@ -117,7 +102,7 @@ shared_comm.Barrier()
 
 if rank==0:
 	# Create the filament population object in rank 0
-	centers,angles,sizes,psi_LH,thetaH,thetaL,fpol0,beta_array,T_array,final_Nfils,filaments_mask,theta_a = get_FilPop(Nfil,theta_LH_RMS,size_ratio,size_scale,slope,Bcube,size_box,seed_population,alpha,beta,nside,beta_template,T_template,ell_limit,sigma_rho,Nthreads=int(Nthreads),dust_template=dust_template,mask_file=mask_file,galactic_plane=galactic_plane,null_Gplane=null_Gplane,fixed_distance=fixed_distance,fixed_size=fixed_size)
+	centers,angles,sizes,psi_LH,thetaH,thetaL,fpol0,beta_array,T_array,final_Nfils,filaments_mask,theta_a = get_FilPop(int(dict['Nfil']),float(dict['theta_LH_RMS']),float(dict['size_ratio']),float(dict['size_scale']),float(dict['slope']),Bcube,float(dict['size_box']),seed_population,float(dict['alpha']),float(dict['beta']),int(dict['nside']),str(dict['beta_template']),str(dict['T_template']),float(dict['ell_limit']),float(dict['sigma_rho']),Nthreads=Nthreads,dust_template=str(dict['dust_template']),mask_file=str(dict['mask_file']),galactic_plane=galactic_plane,null_Gplane=null_Gplane,fixed_distance=fixed_distance,fixed_size=fixed_size)
 	print('finish with population')
 # Now I split the total number of filaments in the ranks
 if rank == 0:
@@ -211,9 +196,9 @@ shared_comm.Barrier()
 
 # this tqu_total must be a dictionary, where the keys are the Nsides from 32 to nside
 tqu_total = {}
-nside_moving = int(nside)
+nside_moving = int(dict['nside'])
 while nside_moving >= 128:
-	tqu_total[nside_moving] = np.ascontiguousarray(np.zeros((len(freqs),3,12*nside_moving**2),dtype=np.double))
+	tqu_total[nside_moving] = np.ascontiguousarray(np.zeros((Nfreqs,3,12*nside_moving**2),dtype=np.double))
 	# this way you get 2048 at the beginning, then 1024, then 512, etc. all the way to 128
 	nside_moving = int(0.5*nside_moving)
 
@@ -224,11 +209,11 @@ rank_time = 0.0
 
 for n_rank,n_general in enumerate(fils_indices_split_rank):
 	# we need to decide what is the size of the a filament. We will decide it is 2*Theta_a, which is one total length (remember that La and Lb are semi-axes)
-	if np.pi/theta_a_rank[n_rank] < ell_limit:
+	if np.pi/theta_a_rank[n_rank] < float(dict['ell_limit']):
 		continue
 	try:
 		time_start = time.time_ns()
-		Paint_Filament(n_rank,nside,sizes_rank,centers_rank,angles_rank,float(fpol0_rank[n_rank]),float(thetaH_rank[n_rank]),float(beta_array_rank[n_rank]),float(T_array_rank[n_rank]),Bcube,size_box,Npixels_magfield,resolution,freqs,len(freqs),tqu_total,Nthreads,skip_Bcube,rank)
+		Paint_Filament(n_rank,int(dict['nside']),sizes_rank,centers_rank,angles_rank,float(fpol0_rank[n_rank]),float(thetaH_rank[n_rank]),float(beta_array_rank[n_rank]),float(T_array_rank[n_rank]),Bcube,float(dict['size_box']),Npixels_magfield,int(dict['resolution']),freq_array,Nfreqs,tqu_total,Nthreads,skip_Bcube,rank)
 		time_end = time.time_ns()
 		# divide by 1e6 to transform to ms
 		rank_time += (time_end-time_start)/1e6
@@ -242,15 +227,15 @@ if rank==0:
 	# only processor 0 will actually get the data
 	# tqu_final must also be a dict like tqu_total
 	tqu_final = {}
-	nside_moving = int(nside)
+	nside_moving = int(dict['nside'])
 	while nside_moving >= 128:
-		tqu_final[nside_moving] = np.zeros((len(freqs),3,12*nside_moving**2),dtype=np.double)
+		tqu_final[nside_moving] = np.zeros((Nfreqs,3,12*nside_moving**2),dtype=np.double)
 		# this way you get 2048 at the beginning, then 1024, then 512, etc. all the way to 128
 		nside_moving = int(0.5*nside_moving)
 else:
 	# tqu_final must also be a dict like tqu_total
 	tqu_final = {}
-	nside_moving = int(nside)
+	nside_moving = int(dict['nside'])
 	while nside_moving >= 128:
 		tqu_final[nside_moving] = None
 		# this way you get 2048 at the beginning, then 1024, then 512, etc. all the way to 128
@@ -269,29 +254,29 @@ time_total = shared_comm.reduce(rank_time,op=MPI.SUM,root=0)
 
 if rank==0:
 	# I need to upgrade the resolution for every nside between 128 and nside
-	for n in range(len(freqs)):
-		tqu_final_final = np.zeros((3,12*nside**2),dtype=np.double)
+	for n in range(Nfreqs):
+		tqu_final_final = np.zeros((3,12*int(dict['nside'])**2),dtype=np.double)
 		for nside_var,tqumap in tqu_final.items():
-			if nside_var == nside:
+			if nside_var == int(dict['nside']):
 				# in this case only sum into tqu_final_final, do not upgrade
 				# I keep a copy of this map also
 				tqu_final_final += tqumap[n]
 			else:
 				# we have to upgrade the resolution in harmonic space
-				print('Im upgrading the resolution in harm space at nside=%i for frequency %.1f'%(nside_var,freqs[n]))
+				print('Im upgrading the resolution in harm space at nside=%i for frequency %.1f'%(nside_var,freq_array[n]))
 				tqumap_ring = hp.reorder(tqumap[n],n2r=True)
 				(almT, almE, almB) = hp.map2alm(tqumap_ring,pol=True,lmax=(3*nside_var))
 				fwhm = np.sqrt(np.pi/3.0)/nside_var
-				almT_conv = hp.almxfl(almT, hp.gauss_beam(fwhm,lmax=(4*nside)), inplace=False)
-				almE_conv = hp.almxfl(almE, hp.gauss_beam(fwhm,lmax=(4*nside)), inplace=False)
-				almB_conv = hp.almxfl(almB, hp.gauss_beam(fwhm,lmax=(4*nside)), inplace=False)
-				tqumap_nside = hp.alm2map((almT_conv,almE_conv,almB_conv),nside,pol=True)
+				almT_conv = hp.almxfl(almT, hp.gauss_beam(fwhm,lmax=(4*int(dict['nside']))), inplace=False)
+				almE_conv = hp.almxfl(almE, hp.gauss_beam(fwhm,lmax=(4*int(dict['nside']))), inplace=False)
+				almB_conv = hp.almxfl(almB, hp.gauss_beam(fwhm,lmax=(4*int(dict['nside']))), inplace=False)
+				tqumap_nside = hp.alm2map((almT_conv,almE_conv,almB_conv),int(dict['nside']),pol=True)
 				tqumap_nside_nest = hp.reorder(tqumap_nside,r2n=True)
 				tqu_final_final += tqumap_nside_nest
 		# I save the final map at freq nn
-		hp.write_map(output_tqumap+'_f%s.fits'%str(freqs[n]).replace('.','p'),tqu_final_final,nest=True,overwrite=True,dtype=np.double)
+		hp.write_map(output_tqumap+'_f%s.fits'%str(freq_array[n]).replace('.','p'),tqu_final_final,nest=True,overwrite=True,dtype=np.double)
 	second_part_time = time.time_ns() - start_time_second
-	
+
 	#f = open(output_params_file,'a') # I append the times
 	#f.write('The total number of skipped filaments is %i\n'%(counter_total))
 	#f.write('The time for the first part is %f s\n'%(first_part_time/1e9))
