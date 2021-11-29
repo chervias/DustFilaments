@@ -2,7 +2,7 @@ from setuptools import setup, Extension
 
 PACKAGE_NAME = 'DustFilaments'
 
-module =  Extension('FilamentPaint',
+module =  Extension(PACKAGE_NAME+'.FilamentPaint',
 sources = ['source/FilamentPaint.c','source/FilamentPaint_mod.c','source/query_polygon_wrapper.cpp'],
 include_dirs = ['source'],
 libraries=['gsl','healpix_cxx','cxxsupport','c_utils'],
