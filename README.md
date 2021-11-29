@@ -42,7 +42,7 @@ Using the code
 
 We provide a script that can be run in a cluster with mpi. The parameters must be specified in the file `test/params.yml`. To run, use
 ```
-mpiexec -n Np test/Example-script.py test/params.yml
+mpiexec -n Np python test/Example-script.py test/params.yml
 ```
 where `Np` is the number of processes you want to run in your cluster. Each process will run `Nfils/Np` filaments, where `Nfils` is the total number of filaments you want to produce. One of the parameters is `Nthreads` which sets how many threads to run each call of the filament painting method. For a node of 64 threads, a good combination is running 8 mpi processes with 8 threads each, for example. Using a `hostfile` in mpi, you can easily run in multiple nodes to speed up the calculation.
 
