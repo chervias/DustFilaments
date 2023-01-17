@@ -4,7 +4,7 @@ import healpy as hp
 from mpi4py import MPI
 from DustFilaments.MagField import get_MagField
 from DustFilaments.FilPop import get_FilPop
-from FilamentPaint2 import Paint_Filament
+from DustFilaments.FilamentPaint import Paint_Filament
 import time
 import yaml
 from yaml import Loader
@@ -21,11 +21,6 @@ dict = yaml.load(stream,Loader=Loader)
 
 freq_array = np.array(dict['freqs'],dtype=np.double)
 Nfreqs = len(freq_array)
-
-try:
-	Nthreads = int(dict['Nthreads'])
-except KeyError:
-	Nthreads = 8
 
 try:
 	seed_population = int(dict['seed_population'])
@@ -119,7 +114,7 @@ shared_comm.Barrier()
 
 if rank==0:
 	# Create the filament population object in rank 0
-	centers,angles,sizes,psi_LH,thetaH,thetaL,fpol0,beta_array,T_array,final_Nfils,filaments_mask,theta_a = get_FilPop(int(dict['Nfil']),float(dict['theta_LH_RMS']),float(dict['size_ratio']),float(dict['size_scale']),float(dict['slope']),Bcube,float(dict['size_box']),seed_population,float(dict['alpha']),float(dict['beta']),int(dict['nside']),str(dict['beta_template']),str(dict['T_template']),float(dict['ell_limit']),float(dict['sigma_rho']),Nthreads=Nthreads,dust_template=str(dict['dust_template']),mask_file=str(dict['mask_file']),galactic_plane=galactic_plane,null_Gplane=null_Gplane,fixed_distance=fixed_distance,fixed_size=fixed_size,random_fpol=random_fpol,fpol_template=str(dict['fpol_template']))
+	centers,angles,sizes,psi_LH,thetaH,thetaL,fpol0,beta_array,T_array,final_Nfils,filaments_mask,theta_a = get_FilPop(int(dict['Nfil']),float(dict['theta_LH_RMS']),float(dict['size_ratio']),float(dict['size_scale']),float(dict['slope']),Bcube,float(dict['size_box']),seed_population,float(dict['alpha']),float(dict['beta']),int(dict['nside']),str(dict['beta_template']),str(dict['T_template']),float(dict['ell_limit']),float(dict['sigma_rho']),dust_template=str(dict['dust_template']),mask_file=str(dict['mask_file']),galactic_plane=galactic_plane,null_Gplane=null_Gplane,fixed_distance=fixed_distance,fixed_size=fixed_size,random_fpol=random_fpol,fpol_template=str(dict['fpol_template']))
 	print('finished with population')
 	#print('The length of T_array is ',len(T_array))
 # Now I split the total number of filaments in the ranks
@@ -240,7 +235,7 @@ if True:
 			continue
 		try:
 			time_start = time.time_ns()
-			Paint_Filament(n_rank,int(dict['nside']),sizes_rank,centers_rank,angles_rank,float(fpol0_rank[n_rank]),float(thetaH_rank[n_rank]),float(beta_array_rank[n_rank]),float(T_array_rank[n_rank]),Bcube,float(dict['size_box']),Npixels_magfield,int(dict['resolution']),freq_array,Nfreqs,tqu_total,Nthreads,skip_Bcube,rank)
+			Paint_Filament(n_rank,int(dict['nside']),sizes_rank,centers_rank,angles_rank,float(fpol0_rank[n_rank]),float(thetaH_rank[n_rank]),float(beta_array_rank[n_rank]),float(T_array_rank[n_rank]),Bcube,float(dict['size_box']),Npixels_magfield,int(dict['resolution_low']),int(dict['resolution_high']),freq_array,Nfreqs,tqu_total,skip_Bcube,rank)
 			time_end = time.time_ns()
 			# divide by 1e6 to transform to ms
 			rank_time += (time_end-time_start)/1e6
@@ -301,14 +296,15 @@ if True:
 					tqumap_nside_nest = hp.reorder(tqumap_nside,r2n=True)
 					tqu_final_final += tqumap_nside_nest
 			# I save the final map at freq nn
-			hp.write_map(output_tqumap+'_f%s.fits'%str(freq_array[n]).replace('.','p'),tqu_final_final,nest=True,overwrite=True,dtype=np.double)
+			hp.write_map(output_tqumap+'_f%s.fits'%str(freq_array[n]).replace('.','p'),tqu_final_final,nest=True,overwrite=True,dtype=np.single)
 		second_part_time = time.time_ns() - start_time_second
 
 		#f = open(output_params_file,'a') # I append the times
-		#f.write('The total number of skipped filaments is %i\n'%(counter_total))
-		#f.write('The time for the first part is %f s\n'%(first_part_time/1e9))
-		#f.write('The total time running is %f s\n'%(time_total/1e3))
-		#f.write('The total time running (per filament) is %f ms\n'%(time_total/final_Nfils))
-		#f.write('The time for the second part is %f s\n'%(second_part_time/1e9))
-		#f.write('The total time of execution is %f s\n'%((time.time_ns() - start_time_absolute)/1e9))
+		print('The total number of skipped filaments is %i\n'%(counter_total))
+		print('The time for the first part is %f s\n'%(first_part_time/1e9))
+		print('The total time running is %f s\n'%(time_total/1e3))
+		print('The total time running (per filament) is %f ms\n'%(time_total/final_Nfils))
+		print('The time for the second part is %f s\n'%(second_part_time/1e9))
+		print('The total time of execution is %f s\n'%((time.time_ns() - start_time_absolute)/1e9))
 		#f.close()
+

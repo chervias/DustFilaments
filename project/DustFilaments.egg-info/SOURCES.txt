@@ -8,6 +8,16 @@ project/DustFilaments.egg-info/PKG-INFO
 project/DustFilaments.egg-info/SOURCES.txt
 project/DustFilaments.egg-info/dependency_links.txt
 project/DustFilaments.egg-info/top_level.txt
+project/DustFilaments/__pycache__/FilPop.cpython-39.pyc
+project/DustFilaments/__pycache__/MagField.cpython-39.pyc
+project/DustFilaments/__pycache__/__init__.cpython-310.pyc
+project/DustFilaments/__pycache__/__init__.cpython-36.pyc
+project/DustFilaments/__pycache__/__init__.cpython-39.pyc
 project/source/FilamentPaint.c
+project/source/FilamentPaint.h
 project/source/FilamentPaint_mod.c
 project/source/query_polygon_wrapper.cpp
+project/source/query_polygon_wrapper.h
+test/Example-script.py
+test/Script.py
+test/params.yml
