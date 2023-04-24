@@ -35,7 +35,7 @@ def get_centers(galactic_plane,null_Gplane,fixed_distance,dust_template,nside,Nf
 		C = Nfil / np.sum(map_nside)
 		number_fil = np.random.poisson(C*map_nside,12*nside**2)
 		real_number = int(np.sum(number_fil))
-		indices = np.zeros((real_number),dtype=np.int)
+		indices = np.zeros((real_number),dtype=int)
 		counter = 0
 		for n in range(12 * nside **2):
 			if number_fil[n] > 0:
@@ -67,7 +67,7 @@ def get_centers(galactic_plane,null_Gplane,fixed_distance,dust_template,nside,Nf
 			centers[:,2] = (0.4*size) * u_rand
 		return int(Nfil), np.ascontiguousarray(centers,dtype=np.double)
 
-def get_sizes(Nfil,fixed_size,size_scale,slope,size_ratio):
+def get_sizes(Nfil,fixed_size,size_scale,slope,eta_eps,size_ratio):
 	# The sizes will be the ellipsoid semi axes a,b,c with a=b<c
 	sizes			= np.zeros((Nfil,3))
 	if fixed_size:
@@ -75,15 +75,14 @@ def get_sizes(Nfil,fixed_size,size_scale,slope,size_ratio):
 	else:
 		c_semiaxis = size_scale*(1.0+np.random.pareto(slope-1.0,size=Nfil))
 	sizes[:,2]		= c_semiaxis
-	# the size_ratio has a La^0.1/(size_scale)^0.1 dependance
-	sizes[:,0]		= size_ratio*(sizes[:,2]/size_scale) ** +0.122 * sizes[:,2]
-	sizes[:,1]		= size_ratio*(sizes[:,2]/size_scale) ** +0.122 * sizes[:,2]
+	sizes[:,0]	= size_ratio*(sizes[:,2]/size_scale) ** eta_eps * sizes[:,2]
+	sizes[:,1]	= size_ratio*(sizes[:,2]/size_scale) ** eta_eps * sizes[:,2]
 	return sizes
 
-def get_fpol(alpha,beta,Nfil,sizes,size_scale,nside,centers,random=True,fpol_template=None):
+def get_fpol(alpha,beta,Nfil,sizes,size_scale,nside,centers,eta_fpol,random=True,fpol_template=None):
 	if random:
 		# create a beta distribution for fpol0
-		return np.ascontiguousarray(np.random.beta(alpha,beta,size=Nfil)*(sizes[:,2]/size_scale) ** -0.1,dtype=np.double)
+		return np.ascontiguousarray(np.random.beta(alpha,beta,size=Nfil)*(sizes[:,2]/size_scale) ** eta_fpol, dtype=np.double)
 	else:
 		if fpol_template is not None:
 			# load the map
@@ -120,10 +119,9 @@ def get_beta_T(beta_template,T_template,nside,Nfil,centers,sigma_rho):
 	T_array = T_map_nside[0][pixels]
 	return np.ascontiguousarray(beta_array),np.ascontiguousarray(T_array)
 
-def get_FilPop(Nfil,theta_LH_RMS,size_ratio,size_scale,slope,Bcube,size,seed,alpha,beta,nside,beta_template,T_template,ell_limit,sigma_rho,dust_template=None,mask_file=None,fixed_distance=False,fixed_size=False,galactic_plane=False,null_Gplane=False,random_fpol=True,fpol_template=None):
+def get_FilPop(Nfil,theta_LH_RMS,size_ratio,size_scale,slope,eta_eps,eta_fpol,Bcube,size,seed,alpha,beta,nside,beta_template,T_template,ell_limit,sigma_rho,dust_template=None,mask_file=None,fixed_distance=False,fixed_size=False,galactic_plane=False,null_Gplane=False,random_fpol=True,fpol_template=None):
 	Npix_box = int(Bcube.shape[0])
 	max_length		= 1.0
-	nu_index = +0.122
 	np.random.seed(seed)
 	theta_LH_RMS_radians = np.radians(theta_LH_RMS)
 	realNfils, centers = get_centers(galactic_plane,null_Gplane,fixed_distance,dust_template,nside,Nfil,size,mask_file) # this method will determine the total number of filaments, which is different if we do the poisson thing
@@ -136,10 +134,10 @@ def get_FilPop(Nfil,theta_LH_RMS,size_ratio,size_scale,slope,Bcube,size,seed,alp
 	#random_azimuth = np.random.vonmises(center_angle,np.radians(80.0),size=(realNfils))
 	results = Get_Angles( realNfils, Bcube, Npix_box, random_vectors, random_azimuth, theta_LH, size, centers , theta_LH_RMS_radians)
 	(angles, long_vec, psi_LH, thetaH, thetaL) = results
-	sizes = get_sizes(realNfils,fixed_size,size_scale,slope,size_ratio)
+	sizes = get_sizes(realNfils,fixed_size,size_scale,slope,eta_eps,size_ratio)
 	print("I have calculated the centers, angles, sizes")
-	mask,theta_a = Reject_Big_Filaments(sizes, thetaL, size_ratio, centers, realNfils, ell_limit, size_scale, nu_index)
-	fpol0 = get_fpol(alpha,beta,realNfils,sizes,size_scale,nside,centers,random_fpol,fpol_template)
+	mask,theta_a = Reject_Big_Filaments(sizes, thetaL, size_ratio, centers, realNfils, ell_limit, size_scale, eta_eps)
+	fpol0 = get_fpol(alpha,beta,realNfils,sizes,size_scale,nside,centers,eta_fpol,random_fpol,fpol_template)
 	beta_array,T_array = get_beta_T(beta_template,T_template,nside,realNfils,centers,sigma_rho)
 	final_Nfils = int(realNfils)
 	return centers, angles, sizes, psi_LH, thetaH, thetaL, fpol0, beta_array, T_array, final_Nfils, mask, theta_a
