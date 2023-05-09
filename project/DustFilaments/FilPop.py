@@ -119,7 +119,7 @@ def get_beta_T(beta_template,T_template,nside,Nfil,centers,sigma_rho):
 	T_array = T_map_nside[0][pixels]
 	return np.ascontiguousarray(beta_array),np.ascontiguousarray(T_array)
 
-def get_FilPop(Nfil,theta_LH_RMS,size_ratio,size_scale,slope,eta_eps,eta_fpol,Bcube,size,seed,alpha,beta,nside,beta_template,T_template,ell_limit,sigma_rho,dust_template=None,mask_file=None,fixed_distance=False,fixed_size=False,galactic_plane=False,null_Gplane=False,random_fpol=True,fpol_template=None):
+def get_FilPop(Nfil,theta_LH_RMS,size_ratio,size_scale,slope,eta_eps,eta_fpol,Bcube,size,seed,alpha,beta,nside,beta_template,T_template,ell_limit,sigma_rho,dust_template=None,mask_file=None,fixed_distance=False,fixed_size=False,galactic_plane=False,null_Gplane=False,random_fpol=True,fpol_template=None,asymmetry=False,center_vonmises=0.0,kappa_vonmises=1.0):
 	Npix_box = int(Bcube.shape[0])
 	max_length		= 1.0
 	np.random.seed(seed)
@@ -128,10 +128,10 @@ def get_FilPop(Nfil,theta_LH_RMS,size_ratio,size_scale,slope,eta_eps,eta_fpol,Bc
 	# get angles now is on C
 	random_vectors  = np.zeros((realNfils,3)) ; random_vectors[:,0] = -1.0 
 	theta_LH		= np.fabs(np.random.normal(loc=0,scale=theta_LH_RMS_radians,size=(realNfils)))
-	random_azimuth = np.random.uniform(0.0,2.0*np.pi,size=(realNfils))
-	#random_azimuth = np.random.uniform(0.0,np.pi/2,size=(realNfils))
-	#center_angle = np.radians(0)
-	#random_azimuth = np.random.vonmises(center_angle,np.radians(80.0),size=(realNfils))
+	if asymmetry:
+		random_azimuth = np.random.vonmises(np.radians(center_vonmises), kappa_vonmises,size=(realNfils))
+	else:
+		random_azimuth = np.random.uniform(0.0,2.0*np.pi,size=(realNfils))
 	results = Get_Angles( realNfils, Bcube, Npix_box, random_vectors, random_azimuth, theta_LH, size, centers , theta_LH_RMS_radians)
 	(angles, long_vec, psi_LH, thetaH, thetaL) = results
 	sizes = get_sizes(realNfils,fixed_size,size_scale,slope,eta_eps,size_ratio)
