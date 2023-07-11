@@ -39,7 +39,7 @@ extern "C" {
 			}
 			*sucess = 1;
 		}
-		catch (PlanckError e){
+		catch (PlanckError &){
 			*sucess = 0;
 		}
 	}

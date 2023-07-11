@@ -5,8 +5,14 @@
 #include <math.h>
 #include <numpy/ndarrayobject.h>
 #include <omp.h>
+#include <gsl/gsl_errno.h>
+#include <gsl/gsl_math.h>
+#include <gsl/gsl_roots.h>
+#include <gsl/gsl_rng.h>
+#include "FilamentPaint.h"
 
-#include <FilamentPaint.h>
+#include "root_fn.h"
+#include "root_fn.c"
 
 #define H_PLANCK 6.6260755e-34
 #define K_BOLTZ 1.380658e-23
@@ -68,6 +74,268 @@ static PyObject *Reject_Big_Filaments(PyObject *self, PyObject *args){
 	return(rtrn);
 }
 
+static PyObject *Get_Angles_Asymmetry(PyObject *self, PyObject *args){
+	/* Getting the elements */
+	PyObject *Nfil = NULL ;
+	PyObject *Bcube = NULL ;
+	PyObject *Npix_box = NULL;
+	PyObject *random_vector = NULL;
+	PyObject *random_psiLH = NULL; // instead of random phiLH we use a random psiLH as input, and the random phiLH will come out of the calculation
+	PyObject *random_thetaLH = NULL;
+	PyObject *size = NULL;
+	PyObject *centers = NULL;
+	PyObject *theta_LH_RMS = NULL;
+	if (!PyArg_ParseTuple(args, "OOOOOOOOO",&Nfil, &Bcube, &Npix_box, &random_vector, &random_psiLH, &random_thetaLH, &size, &centers , &theta_LH_RMS ))
+		return NULL;
+	int Nfil_ = (int) PyLong_AsLong(Nfil);
+	int Npix_box_ = (int) PyLong_AsLong(Npix_box);
+	
+	// The Bcube will follow the ordering of Kevin's code [iz,iy,ix,]
+	double *Bcube_ptr = PyArray_DATA(Bcube);
+	double *centers_ptr = PyArray_DATA(centers);
+	double *random_vector_ptr = PyArray_DATA(random_vector);
+	double *random_psiLH_ptr = PyArray_DATA(random_psiLH);
+	double *random_thetaLH_ptr = PyArray_DATA(random_thetaLH);
+	
+	double size_ = PyFloat_AsDouble(size);
+	double theta_LH_RMS_ = PyFloat_AsDouble(theta_LH_RMS);
+	
+	// define the angles array to output
+	double *angles = calloc(Nfil_*2,sizeof(double));
+	double *Lhat = calloc(Nfil_*3,sizeof(double));
+	double *phi_LH = calloc(Nfil_,sizeof(double));
+	double *psi_LH = calloc(Nfil_,sizeof(double));
+	double *thetaH = calloc(Nfil_,sizeof(double));
+	double *thetaL = calloc(Nfil_,sizeof(double));
+	double *vecY = calloc(Nfil_*3,sizeof(double));
+	long *mask_fils = calloc(Nfil_,sizeof(long));
+	
+	int max_iter = 100 ;
+	#pragma omp parallel 
+	{
+	int status, iter;
+	const gsl_root_fsolver_type *T;
+	const gsl_rng_type *T_rand;
+	gsl_root_fsolver *s;
+	gsl_rng *r;
+	gsl_rng_env_setup();
+	double phiLH_lo, phiLH_hi;
+	gsl_function F;
+	F.function = &fn;
+	T = gsl_root_fsolver_bisection;
+	s = gsl_root_fsolver_alloc (T);
+	
+	T_rand = gsl_rng_default;
+	r = gsl_rng_alloc (T_rand);
+	
+	#pragma omp for schedule(static)
+	for(int n=0;n<Nfil_;n++){
+		mask_fils[n] = 1L ;
+		double local_magfield[3], center[3], random_vector[3] ;
+		int j;
+		for(j=0;j<3;j++){
+			center[j] = centers_ptr[n*3 + j];
+			random_vector[j] = random_vector_ptr[n*3 + j] ;
+		}
+		FilamentPaint_TrilinearInterpolation(Bcube_ptr, size_, Npix_box_, center, local_magfield) ;
+		//printf("The magnetic field is %.6f %.6f %.6f \n",local_magfield[0],local_magfield[1],local_magfield[2]);
+		double local_magfield_mod = 0.0;
+		for(j=0;j<3;j++) local_magfield_mod += pow(local_magfield[j],2);
+		if (theta_LH_RMS_ == 0.0){
+			//#pragma omp critical
+			{
+				for(j=0;j<3;j++) Lhat[n*3+j] = local_magfield[j] / sqrt(local_magfield_mod) ;
+				angles[n*2 + 1] = acos(Lhat[n*3+2]);
+				angles[n*2 + 0] = atan2(Lhat[n*3+1],Lhat[n*3+0]);
+			}
+		}
+		else{
+			// first, we need to find the phiLH angle with the root solver
+			// we have to reset a few variables
+			iter = 0;
+			double result=0.0;
+			phiLH_lo = -0.5*PI;
+			phiLH_hi = +0.5*PI;
+			struct fn_params params = {random_thetaLH_ptr[n], random_psiLH_ptr[n], local_magfield[0],local_magfield[1],local_magfield[2], center[0], center[1], center[2], random_vector[0], random_vector[1], random_vector[2]};
+			
+			// we need to make sure that the intervals have opposite sign
+			// while they don't have opposite signs, we will move the range 1 degree to the right, we do this until the high end of the range passes phiLH=PI. By that point we should have a root in the range, if not that means we have a random psiLH that is outside the allowed range, we give up and set phiLH = 0
+			double y_lo=1.0,y_hi=1.0;
+			int doibreak = 0;
+			while(doibreak==0){
+				y_lo = fn(phiLH_lo,&params);
+				y_hi = fn(phiLH_hi,&params);
+				if (y_lo*y_hi < 0.0 || phiLH_hi > 2*PI){
+					doibreak = 1;
+				}
+				else{
+					phiLH_hi += 1.0 * PI / 180.0 ;
+					phiLH_lo += 1.0 * PI / 180.0 ;
+				}
+			}
+			if (phiLH_hi > 2*PI){
+				// this means that the extremes of the function never crossed the y=0 line, this can happen if the random psiLH is not in the allowed range, we should skip that filament.
+				phi_LH[n] = gsl_rng_uniform (r) * 2.0 * PI ;
+				mask_fils[n] = 0L;
+				//printf("For fil %i I never crossed the y=0 line \n",n);
+			}
+			else{
+				// we try to solve the eq numerically
+				F.params = &params;
+				gsl_root_fsolver_set (s, &F, phiLH_lo, phiLH_hi);
+				do{
+					iter++;
+					status = gsl_root_fsolver_iterate (s);
+					result = gsl_root_fsolver_root (s);
+					phiLH_lo = gsl_root_fsolver_x_lower (s);
+					phiLH_hi = gsl_root_fsolver_x_upper (s);
+					status = gsl_root_test_interval(phiLH_lo, phiLH_hi, 0, 0.0000000001);
+					//if (status == GSL_SUCCESS) printf ("Converged:\n");
+					//printf ("%5d [%.7f, %.7f] %.7f %+.7f \n",iter, phiLH_lo, phiLH_hi, result, phiLH_hi - phiLH_lo);
+				}
+				while (status == GSL_CONTINUE && iter < max_iter);
+				if (iter>90){
+					//printf("For fil %i I did %i iterations \n",n,iter);
+				}
+				if (iter < max_iter){
+					phi_LH[n] = result;
+				}
+				else{
+					phi_LH[n] = gsl_rng_uniform (r) * 2.0 * PI ;
+					mask_fils[n] = 0L;
+					printf("Filament %i did not converge \n",n);
+				}
+			}
+			double centers_mod = 0.0;
+			double hatZ[3], rhat[3], local_B_proj[3], hatY[3], Lhat0[3], filament_vec_proj[3] ;
+			for(j=0;j<3;j++) hatZ[j] = local_magfield[j] / sqrt(local_magfield_mod) ;
+			
+			for(j=0;j<3;j++) centers_mod += pow(center[j],2) ;
+			for(j=0;j<3;j++) rhat[j] = center[j] / sqrt(centers_mod) ;
+			
+			double dot_product = 0.0 ;
+			for(j=0;j<3;j++) dot_product += local_magfield[j] * rhat[j] ;
+			for(j=0;j<3;j++) local_B_proj[j] = local_magfield[j]  - dot_product * rhat[j] ;
+			// this is cross product 
+			vecY[n*3+0] = (hatZ[1]*random_vector_ptr[n*3+2] - hatZ[2]*random_vector_ptr[n*3+1]) ;
+			vecY[n*3+1] = (hatZ[2]*random_vector_ptr[n*3+0] - hatZ[0]*random_vector_ptr[n*3+2]) ;
+			vecY[n*3+2] = (hatZ[0]*random_vector_ptr[n*3+1] - hatZ[1]*random_vector_ptr[n*3+0]) ;
+			double vecY_mod = 0.0;
+			for(j=0;j<3;j++) vecY_mod += pow(vecY[n*3+j],2) ;
+			for(j=0;j<3;j++) hatY[j] = vecY[n*3+j] / sqrt(vecY_mod) ;
+			// rotate hatZ around hatY by theta_LH using Rodrigues formula
+			double cross_product[3] ;
+			cross_product[0] = (hatY[1]*hatZ[2] - hatY[2]*hatZ[1]) ;
+			cross_product[1] = (hatY[2]*hatZ[0] - hatY[0]*hatZ[2]) ;
+			cross_product[2] = (hatY[0]*hatZ[1] - hatY[1]*hatZ[0]) ;
+			dot_product = 0.0 ;
+			for(j=0;j<3;j++) dot_product += hatY[j]*hatZ[j] ;
+			for(j=0;j<3;j++) Lhat0[j] = hatZ[j]*cos(random_thetaLH_ptr[n]) + cross_product[j]*sin(random_thetaLH_ptr[n]) + hatY[j]*dot_product*(1.0 - cos(random_thetaLH_ptr[n])) ;
+			
+			// We rotate Lhat0 around hatZ by phi using Rodrigues formula
+			cross_product[0] = (hatZ[1]*Lhat0[2] - hatZ[2]*Lhat0[1]) ;
+			cross_product[1] = (hatZ[2]*Lhat0[0] - hatZ[0]*Lhat0[2]) ;
+			cross_product[2] = (hatZ[0]*Lhat0[1] - hatZ[1]*Lhat0[0]) ;
+			dot_product = 0.0 ;
+			for(j=0;j<3;j++) dot_product += hatZ[j]*Lhat0[j] ;
+			//#pragma omp critical
+			{
+				for(j=0;j<3;j++) Lhat[n*3+j] = Lhat0[j]*cos(phi_LH[n]) + cross_product[j]*sin(phi_LH[n]) + hatZ[j]*dot_product*(1.0 - cos(phi_LH[n])) ;
+			}
+			// project the vector along the long axis of the filament towards rhat
+			dot_product = 0.0 ;
+			for(j=0;j<3;j++) dot_product += Lhat[n*3+j]*rhat[j] ;
+			for(j=0;j<3;j++) filament_vec_proj[j] = Lhat[n*3+j] - dot_product * rhat[j] ;
+			
+			cross_product[0] = (filament_vec_proj[1]*local_B_proj[2] - filament_vec_proj[2]*local_B_proj[1]) ;
+			cross_product[1] = (filament_vec_proj[2]*local_B_proj[0] - filament_vec_proj[0]*local_B_proj[2]) ;
+			cross_product[2] = (filament_vec_proj[0]*local_B_proj[1] - filament_vec_proj[1]*local_B_proj[0]) ;
+			dot_product = 0.0 ;
+			for(j=0;j<3;j++) dot_product += rhat[j]*cross_product[j] ;
+			double dot_product2 = 0.0 ;
+			for(j=0;j<3;j++) dot_product2 += filament_vec_proj[j]*local_B_proj[j];
+			//#pragma omp critical
+			{
+				psi_LH[n] = atan2(dot_product,dot_product2) ;
+			}
+			
+			dot_product = 0.0 ;
+			for(j=0;j<3;j++) dot_product += local_magfield[j] * rhat[j] ;
+			//#pragma omp critical
+			{
+				thetaH[n] = acos( dot_product / sqrt(local_magfield_mod) ) ;
+			}
+			
+			dot_product = 0.0 ;
+			for(j=0;j<3;j++) dot_product += Lhat[n*3+j] * rhat[j] ;
+			double Lhat_norm = 0.0;
+			for(j=0;j<3;j++) Lhat_norm += pow(Lhat[n*3+j],2) ;
+			//#pragma omp critical
+			{
+				thetaL[n] = acos( dot_product / sqrt(Lhat_norm) ) ;
+				angles[n*2 + 0] = atan2(Lhat[n*3+1],Lhat[n*3+0]) ;
+				angles[n*2 + 1] = acos(Lhat[n*3+2] / sqrt(Lhat_norm) ) ;
+			}
+		}
+		//printf("Done with n_fil=%i\n",n);
+	}
+	gsl_root_fsolver_free (s);
+	gsl_rng_free (r);
+	}
+	// return the arrays angles, Lhat , psi_LH , thetaH , thetaL
+	
+	// angles
+	npy_intp npy_shape_angles[2] = {Nfil_,2};
+	PyObject *arr_angles = PyArray_SimpleNewFromData(2,npy_shape_angles, NPY_DOUBLE, angles);
+	
+	// Lhat
+	npy_intp npy_shape_Lhat[2] = {Nfil_,3};
+	PyObject *arr_Lhat = PyArray_SimpleNewFromData(2,npy_shape_Lhat, NPY_DOUBLE, Lhat);
+	
+	// psi_LH 
+	npy_intp npy_shape_psi_LH[1] = {Nfil_};
+	PyObject *arr_psi_LH = PyArray_SimpleNewFromData(1,npy_shape_psi_LH, NPY_DOUBLE, psi_LH);
+	
+	// phi_LH
+	npy_intp npy_shape_phi_LH[1] = {Nfil_};
+	PyObject *arr_phi_LH = PyArray_SimpleNewFromData(1,npy_shape_phi_LH, NPY_DOUBLE, phi_LH);
+	
+	// thetaH 
+	npy_intp npy_shape_thetaH[1] = {Nfil_};
+	PyObject *arr_thetaH = PyArray_SimpleNewFromData(1,npy_shape_thetaH, NPY_DOUBLE, thetaH);
+	
+	// thetaL
+	npy_intp npy_shape_thetaL[1] = {Nfil_};
+	PyObject *arr_thetaL = PyArray_SimpleNewFromData(1,npy_shape_thetaL, NPY_DOUBLE, thetaL);
+	
+	//vecY: this is the vector random_vecs crosspod hatZ, where hatZ is the unit vector along the local mag field. We do the rotation by angle thetaLH around this vector
+	npy_intp npy_shape_vecY[2] = {Nfil_,3};
+	PyObject *arr_vecY = PyArray_SimpleNewFromData(2,npy_shape_vecY, NPY_DOUBLE, vecY);
+	
+	//maskfils:
+	npy_intp npy_shape_maskfils[1] = {Nfil_};
+	PyObject *arr_maskfils = PyArray_SimpleNewFromData(1,npy_shape_maskfils, NPY_INT, mask_fils);
+	
+	PyArray_ENABLEFLAGS((PyArrayObject *)arr_angles, NPY_OWNDATA);
+	PyArray_ENABLEFLAGS((PyArrayObject *)arr_Lhat, NPY_OWNDATA);
+	PyArray_ENABLEFLAGS((PyArrayObject *)arr_psi_LH, NPY_OWNDATA);
+	PyArray_ENABLEFLAGS((PyArrayObject *)arr_phi_LH, NPY_OWNDATA);
+	PyArray_ENABLEFLAGS((PyArrayObject *)arr_thetaH, NPY_OWNDATA);
+	PyArray_ENABLEFLAGS((PyArrayObject *)arr_thetaL, NPY_OWNDATA);
+	PyArray_ENABLEFLAGS((PyArrayObject *)arr_vecY, NPY_OWNDATA);
+	PyArray_ENABLEFLAGS((PyArrayObject *)arr_maskfils, NPY_OWNDATA);
+	
+	PyObject *rtrn = PyTuple_New(8);
+	PyTuple_SetItem(rtrn, 0, arr_angles);
+	PyTuple_SetItem(rtrn, 1, arr_Lhat);
+	PyTuple_SetItem(rtrn, 2, arr_psi_LH);
+	PyTuple_SetItem(rtrn, 3, arr_phi_LH);
+	PyTuple_SetItem(rtrn, 4, arr_thetaH);
+	PyTuple_SetItem(rtrn, 5, arr_thetaL);
+	PyTuple_SetItem(rtrn, 6, arr_vecY);
+	PyTuple_SetItem(rtrn, 7, arr_maskfils);
+	return rtrn ;
+}
 static PyObject *Get_Angles(PyObject *self, PyObject *args){
 	/* Getting the elements */
 	PyObject *Nfil = NULL ;
@@ -100,15 +368,18 @@ static PyObject *Get_Angles(PyObject *self, PyObject *args){
 	double *psi_LH = calloc(Nfil_,sizeof(double));
 	double *thetaH = calloc(Nfil_,sizeof(double));
 	double *thetaL = calloc(Nfil_,sizeof(double));
+	double *vecY = calloc(Nfil_*3,sizeof(double));
 	
 	#pragma omp parallel for schedule(static)
 	for(int n=0;n<Nfil_;n++){
 		double local_magfield[3], center[3] ;
 		int j;
 		for(j=0;j<3;j++) center[j] = centers_ptr[n*3 + j];
+		//printf("The centers from the C side is %.2f %.2f %.2f \n",center[0],center[1],center[2]);
 		FilamentPaint_TrilinearInterpolation(Bcube_ptr, size_, Npix_box_, center, local_magfield) ;
 		double local_magfield_mod = 0.0;
 		for(j=0;j<3;j++) local_magfield_mod += pow(local_magfield[j],2);
+		//printf("The Bcube center from the C side is %.2f %.2f %.2f \n",local_magfield[0],local_magfield[1],local_magfield[2]);
 		if (theta_LH_RMS_ == 0.0){
 			//#pragma omp critical
 			{
@@ -119,7 +390,7 @@ static PyObject *Get_Angles(PyObject *self, PyObject *args){
 		}
 		else{
 			double centers_mod = 0.0;
-			double hatZ[3], rhat[3], local_B_proj[3], vecY[3], hatY[3], hatZprime[3], filament_vec_proj[3] ;
+			double hatZ[3], rhat[3], local_B_proj[3], hatY[3], hatZprime[3], filament_vec_proj[3] ;
 			for(j=0;j<3;j++) hatZ[j] = local_magfield[j] / sqrt(local_magfield_mod) ;
 			
 			for(j=0;j<3;j++) centers_mod += pow(center[j],2) ;
@@ -129,12 +400,12 @@ static PyObject *Get_Angles(PyObject *self, PyObject *args){
 			for(j=0;j<3;j++) dot_product += local_magfield[j] * rhat[j] ;
 			for(j=0;j<3;j++) local_B_proj[j] = local_magfield[j]  - dot_product * rhat[j] ;
 			// this is cross product 
-			vecY[0] = (hatZ[1]*random_vector_ptr[n*3+2] - hatZ[2]*random_vector_ptr[n*3+1]) ;
-			vecY[1] = (hatZ[2]*random_vector_ptr[n*3+0] - hatZ[0]*random_vector_ptr[n*3+2]) ;
-			vecY[2] = (hatZ[0]*random_vector_ptr[n*3+1] - hatZ[1]*random_vector_ptr[n*3+0]) ;
+			vecY[n*3+0] = (hatZ[1]*random_vector_ptr[n*3+2] - hatZ[2]*random_vector_ptr[n*3+1]) ;
+			vecY[n*3+1] = (hatZ[2]*random_vector_ptr[n*3+0] - hatZ[0]*random_vector_ptr[n*3+2]) ;
+			vecY[n*3+2] = (hatZ[0]*random_vector_ptr[n*3+1] - hatZ[1]*random_vector_ptr[n*3+0]) ;
 			double vecY_mod = 0.0;
-			for(j=0;j<3;j++) vecY_mod += pow(vecY[j],2) ;
-			for(j=0;j<3;j++) hatY[j] = vecY[j] / sqrt(vecY_mod) ;
+			for(j=0;j<3;j++) vecY_mod += pow(vecY[n*3+j],2) ;
+			for(j=0;j<3;j++) hatY[j] = vecY[n*3+j] / sqrt(vecY_mod) ;
 			// rotate hatZ around hatY by theta_LH using Rodrigues formula
 			double cross_product[3] ;
 			cross_product[0] = (hatY[1]*hatZ[2] - hatY[2]*hatZ[1]) ;
@@ -213,18 +484,24 @@ static PyObject *Get_Angles(PyObject *self, PyObject *args){
 	npy_intp npy_shape_thetaL[1] = {Nfil_};
 	PyObject *arr_thetaL = PyArray_SimpleNewFromData(1,npy_shape_thetaL, NPY_DOUBLE, thetaL);
 	
+	//vecY: this is the vector random_vecs crosspod hatZ, where hatZ is the unit vector along the local mag field. We do the rotation by angle thetaLH around this vector
+	npy_intp npy_shape_vecY[2] = {Nfil_,3};
+	PyObject *arr_vecY = PyArray_SimpleNewFromData(2,npy_shape_vecY, NPY_DOUBLE, vecY);
+	
 	PyArray_ENABLEFLAGS((PyArrayObject *)arr_angles, NPY_OWNDATA);
 	PyArray_ENABLEFLAGS((PyArrayObject *)arr_hatZprime2, NPY_OWNDATA);
 	PyArray_ENABLEFLAGS((PyArrayObject *)arr_psi_LH, NPY_OWNDATA);
 	PyArray_ENABLEFLAGS((PyArrayObject *)arr_thetaH, NPY_OWNDATA);
 	PyArray_ENABLEFLAGS((PyArrayObject *)arr_thetaL, NPY_OWNDATA);
+	PyArray_ENABLEFLAGS((PyArrayObject *)arr_vecY, NPY_OWNDATA);
 	
-	PyObject *rtrn = PyTuple_New(5);
+	PyObject *rtrn = PyTuple_New(6);
 	PyTuple_SetItem(rtrn, 0, arr_angles);
 	PyTuple_SetItem(rtrn, 1, arr_hatZprime2);
 	PyTuple_SetItem(rtrn, 2, arr_psi_LH);
 	PyTuple_SetItem(rtrn, 3, arr_thetaH);
 	PyTuple_SetItem(rtrn, 4, arr_thetaL);
+	PyTuple_SetItem(rtrn, 5, arr_vecY);
 	return rtrn ;
 }
 
@@ -372,7 +649,6 @@ static PyObject *Paint_Filament(PyObject *self, PyObject *args){
             double thermo_2_rj = pow(x_cmb,2) * exp(x_cmb) / pow(exp(x_cmb) - 1.0,2) ; // multiplying by this factor transform thermo 2 RJ units, divide for the reverse conversion
             sed_factor_nu[n] = pow(freqs_arr_[n]*1e9,betadust+1.0)/(exp(x_d_nu)-1.0) / thermo_2_rj  / sed_factor_353 ;
         }
-
         // Now I will run FilamentPaint_CalculateDistances and FilamentPaint_RiemannIntegrator over the tqumap itself
         if (nside_fixed > nside_variable){
             // This means the filament is bigger than the fixed resolution and we have to upgrade the map
@@ -441,7 +717,7 @@ static PyObject *Paint_Filament(PyObject *self, PyObject *args){
                     double rDistances[2];
                     double integ[3];
                     FilamentPaint_CalculateDistances(xyz_normal_to_faces,xyz_faces,xyz_edges,xyz_edges_unit,ii,localtriad,rDistances,&skip_pix);
-                    if (skip_pix == 1){
+					if (skip_pix == 1){
                         // if skip_pix is still True, then we could not find the intersection with the face and we skip this particular pixel
                         printf("There is a pixel for which we couldn't find the intersection with the filament box, we skip it \n") ;
                         continue;
@@ -832,6 +1108,7 @@ static PyMethodDef FilamentPaintMethods[] = {
   {"Paint_Filament", Paint_Filament, METH_VARARGS,NULL},
   {"Paint_Filament_Shells", Paint_Filament_Shells, METH_VARARGS,NULL},
   {"Get_Angles", Get_Angles, METH_VARARGS,NULL},
+  {"Get_Angles_Asymmetry", Get_Angles_Asymmetry, METH_VARARGS, NULL},
   {"Reject_Big_Filaments", Reject_Big_Filaments, METH_VARARGS,NULL},
  {NULL, NULL, 0, NULL}        /* Sentinel */
 };
