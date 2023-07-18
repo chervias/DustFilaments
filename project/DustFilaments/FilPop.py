@@ -1,10 +1,8 @@
-from DustFilaments.FilamentPaint import Get_Angles, Get_Angles_Asymmetry, Reject_Big_Filaments
+from DustFilaments.FilamentPaint import Get_Angles, Get_Angles_Asymmetry, Reject_Big_Filaments, Permutations
 import numpy as np
 import healpy as hp
-from scipy.special import erfinv
 from scipy.stats import norm, laplace_asymmetric
-#from scipy.interpolate import RegularGridInterpolator
-#from scipy.optimize import root_scalar
+import os
 
 H_PLANCK =  6.6260755e-34
 K_BOLTZ = 1.380658e-23
@@ -122,22 +120,11 @@ def get_beta_T(beta_template,T_template,nside,Nfil,centers,sigma_rho):
 	# Fixed T from Planck fit
 	T_array = T_map_nside[0][pixels]
 	return np.ascontiguousarray(beta_array),np.ascontiguousarray(T_array)
-def vec_angle_rotate(v,k,theta) :
-	# rotate vector v around vector k by angle theta, via Rodrigues's rotation formula
-	k = k/np.linalg.norm(k)
-	ctheta = np.cos(theta)
-	vrot = v*ctheta + np.cross(k,v)*np.sin(theta) + k*np.dot(k,v)*(1-ctheta)
-	return vrot
-def iF(u,l,k):
-	f1 = (k/l)*np.log(u*(1+k**2)/k**2)
-	if f1<=0: return f1
-	else: return -1/(l*k) * np.log((1+k**2)*(1-u))
-def iFnorm(u,sigma):
-	return np.sqrt(2.0) * sigma * erfinv(2*u - 1)
-def get_FilPop(Nfil,theta_LH_RMS,size_ratio,size_scale,slope,eta_eps,eta_fpol,Bcube,size,seed,alpha,beta,nside,beta_template,T_template,ell_limit,sigma_rho,dust_template=None,mask_file=None,fixed_distance=False,fixed_size=False,galactic_plane=False,null_Gplane=False,random_fpol=True,fpol_template=None,asymmetry=False,lambda_asymmetry=1.0, kappa_asymmetry=1.0):
+def get_FilPop(Nfil,theta_LH_RMS,size_ratio,size_scale,slope,eta_eps,eta_fpol,Bcube,size,seed,alpha,beta,nside,beta_template,T_template,ell_limit,sigma_rho,dust_template=None,mask_file=None,fixed_distance=False,fixed_size=False,galactic_plane=False,null_Gplane=False,random_fpol=True,fpol_template=None,asymmetry=False,lambda_asymmetry=1.0, kappa_asymmetry=1.0, correct_impossible_angles=False):
 	Npix_box = int(Bcube.shape[0])
 	max_length		= 1.0
 	np.random.seed(seed)
+	os.environ["GSL_RNG_SEED"] = str(seed)
 	theta_LH_RMS_radians = np.radians(theta_LH_RMS)
 	realNfils, centers = get_centers(galactic_plane,null_Gplane,fixed_distance,dust_template,nside,Nfil,size,mask_file) # this method will determine the total number of filaments, which is different if we do the poisson thing
 	# get angles now is on C
@@ -148,25 +135,23 @@ def get_FilPop(Nfil,theta_LH_RMS,size_ratio,size_scale,slope,eta_eps,eta_fpol,Bc
 	random_vectors[:,1] = np.sqrt(1. - u_rand**2)*np.sin(phi_rand)
 	random_vectors[:,2] = u_rand
 	if asymmetry:
-		# when asymmetry = True, we will set the psiLH and theta_LH distribution, and solve for the phiLH angle
-		# This correlation method is from here https://oscarnieves100.medium.com/simulating-correlated-random-variables-in-python-c3947f2dbb10
-		#S1 = np.random.normal(loc=0.0,scale=1.0,size=(realNfils))
-		#S2 = np.random.normal(loc=0.0,scale=1.0,size=(realNfils))
-		#mu_x = 0.0
-		#mu_y = np.radians(center_asymmetry)
-		#sigma_x = theta_LH_RMS_radians
-		#sigma_y = np.radians(sigma_asymmetry)
-		#rho = 1.00
-		#theta_LH = mu_x + sigma_x * S1
-		#psi_LH_random = mu_y + sigma_y * (rho*S1 + np.sqrt(1-rho**2)*S2)
-		#psi_LH_random = mu_y + sigma_y * S1
-		
 		# now we use a normal and a asymmetric laplace
 		U = np.random.uniform(0.0,1.0,realNfils)
-		theta_LH = norm.ppf(U, loc=0,scale=theta_LH_RMS_radians)
-		psi_LH_random = laplace_asymmetric.ppf(U, kappa_asymmetry, loc=0, scale=lambda_asymmetry**-1 )
+		theta_LH = norm.ppf(U, loc=0.0, scale=theta_LH_RMS_radians)
+		psi_LH_random = laplace_asymmetric.ppf(U, kappa_asymmetry, loc=0.0, scale=lambda_asymmetry**-1 )
+		if correct_impossible_angles:
+			print("shape of indices of imposible angles = ",np.argwhere(np.fabs(psi_LH_random) > np.fabs(theta_LH)).shape)
+			if int(0.003*realNfils) == 0:
+				Permutations(theta_LH, psi_LH_random, realNfils, 1, 1)
+			else:
+				mask_indices = np.fabs(psi_LH_random) > np.fabs(theta_LH)
+				while(mask_indices.sum()/realNfils*100.0 > 0.1):
+					Permutations(theta_LH, psi_LH_random, realNfils, int(0.003*realNfils), 1)
+					Permutations(theta_LH, psi_LH_random, realNfils, int(0.003*realNfils), 0)
+					mask_indices = np.fabs(psi_LH_random) > np.fabs(theta_LH)
+				print("At the end, I have %i impossible angles"%(mask_indices.sum()))
 		results = Get_Angles_Asymmetry( realNfils, Bcube, Npix_box, random_vectors, psi_LH_random, theta_LH, size, centers , theta_LH_RMS_radians)
-		(angles, long_vec, psi_LH, phi_LH, thetaH, thetaL, vecY, mask_fils) = results
+		(angles, long_vec, psi_LH, phi_LH, thetaH, thetaL, fn_evaluated) = results
 	else:
 		theta_LH		= np.fabs(np.random.normal(loc=0,scale=theta_LH_RMS_radians,size=(realNfils)))
 		random_azimuth = np.random.uniform(0.0,2.0*np.pi,size=(realNfils))
@@ -179,7 +164,8 @@ def get_FilPop(Nfil,theta_LH_RMS,size_ratio,size_scale,slope,eta_eps,eta_fpol,Bc
 	beta_array,T_array = get_beta_T(beta_template,T_template,nside,realNfils,centers,sigma_rho)
 	final_Nfils = int(realNfils)
 	if asymmetry:
-		return centers, angles, sizes, psi_LH, psi_LH_random, phi_LH, thetaH, thetaL, fpol0, beta_array, T_array, final_Nfils, mask, theta_a, vecY, mask_fils
+		mask_fils = np.fabs(theta_LH) >= np.fabs(psi_LH)
+		return centers, angles, sizes, psi_LH, psi_LH_random, phi_LH, theta_LH, thetaH, thetaL, fpol0, beta_array, T_array, final_Nfils, mask, theta_a, fn_evaluated, mask_fils
 	else:
 		return centers, angles, sizes, psi_LH, thetaH, thetaL, fpol0, beta_array, T_array, final_Nfils, mask, theta_a, vecY
 	#return phiLH_arr, fn;

@@ -9,6 +9,8 @@
 #include <gsl/gsl_math.h>
 #include <gsl/gsl_roots.h>
 #include <gsl/gsl_rng.h>
+#include <gsl/gsl_randist.h>
+#include <gsl/gsl_permutation.h>
 #include "FilamentPaint.h"
 
 #include "root_fn.h"
@@ -107,8 +109,7 @@ static PyObject *Get_Angles_Asymmetry(PyObject *self, PyObject *args){
 	double *psi_LH = calloc(Nfil_,sizeof(double));
 	double *thetaH = calloc(Nfil_,sizeof(double));
 	double *thetaL = calloc(Nfil_,sizeof(double));
-	double *vecY = calloc(Nfil_*3,sizeof(double));
-	long *mask_fils = calloc(Nfil_,sizeof(long));
+	double *fn_evaluated = calloc(Nfil_*361,sizeof(double));
 	
 	int max_iter = 100 ;
 	#pragma omp parallel 
@@ -130,7 +131,6 @@ static PyObject *Get_Angles_Asymmetry(PyObject *self, PyObject *args){
 	
 	#pragma omp for schedule(static)
 	for(int n=0;n<Nfil_;n++){
-		mask_fils[n] = 1L ;
 		double local_magfield[3], center[3], random_vector[3] ;
 		int j;
 		for(j=0;j<3;j++){
@@ -138,7 +138,6 @@ static PyObject *Get_Angles_Asymmetry(PyObject *self, PyObject *args){
 			random_vector[j] = random_vector_ptr[n*3 + j] ;
 		}
 		FilamentPaint_TrilinearInterpolation(Bcube_ptr, size_, Npix_box_, center, local_magfield) ;
-		//printf("The magnetic field is %.6f %.6f %.6f \n",local_magfield[0],local_magfield[1],local_magfield[2]);
 		double local_magfield_mod = 0.0;
 		for(j=0;j<3;j++) local_magfield_mod += pow(local_magfield[j],2);
 		if (theta_LH_RMS_ == 0.0){
@@ -158,9 +157,16 @@ static PyObject *Get_Angles_Asymmetry(PyObject *self, PyObject *args){
 			phiLH_hi = +0.5*PI;
 			struct fn_params params = {random_thetaLH_ptr[n], random_psiLH_ptr[n], local_magfield[0],local_magfield[1],local_magfield[2], center[0], center[1], center[2], random_vector[0], random_vector[1], random_vector[2]};
 			
+			// I print the function evaluated every 1 deg between -pi and +pi
+			//int jj=0;
+			//for(double phi__ = -1*PI ; phi__<= PI ; phi__ += PI/180.0){
+			//	fn_evaluated[n*361 + jj] = fn(phi__, &params);
+			//	jj += 1;
+			//}
+			
 			// we need to make sure that the intervals have opposite sign
-			// while they don't have opposite signs, we will move the range 1 degree to the right, we do this until the high end of the range passes phiLH=PI. By that point we should have a root in the range, if not that means we have a random psiLH that is outside the allowed range, we give up and set phiLH = 0
-			double y_lo=1.0,y_hi=1.0;
+			// while they don't have opposite signs, we will move the range 1 degree to the right, we do this until the high end of the range passes phiLH=PI. By that point we should have a root in the range, if not that means we had bad luck on the orientation of the magnetic field. We can redraw a new random_vector .
+			double y_lo=1.0, y_hi=1.0;
 			int doibreak = 0;
 			while(doibreak==0){
 				y_lo = fn(phiLH_lo,&params);
@@ -175,9 +181,11 @@ static PyObject *Get_Angles_Asymmetry(PyObject *self, PyObject *args){
 			}
 			if (phiLH_hi > 2*PI){
 				// this means that the extremes of the function never crossed the y=0 line, this can happen if the random psiLH is not in the allowed range, we should skip that filament.
-				phi_LH[n] = gsl_rng_uniform (r) * 2.0 * PI ;
-				mask_fils[n] = 0L;
-				//printf("For fil %i I never crossed the y=0 line \n",n);
+				phi_LH[n] = 0.0; //gsl_rng_uniform (r) * 2.0 * PI ;
+				//printf("For fil %i I never crossed the y=0 line, I will try again \n",n);
+				//double new_rnd_vector_x = 2.0 * (gsl_rng_uniform (r)-0.5) ;
+				//double new_rnd_vector_y = 2.0 * (gsl_rng_uniform (r)-0.5) ;
+				//double new_rnd_vector_z = 2.0 * (gsl_rng_uniform (r)-0.5) ;
 			}
 			else{
 				// we try to solve the eq numerically
@@ -189,25 +197,24 @@ static PyObject *Get_Angles_Asymmetry(PyObject *self, PyObject *args){
 					result = gsl_root_fsolver_root (s);
 					phiLH_lo = gsl_root_fsolver_x_lower (s);
 					phiLH_hi = gsl_root_fsolver_x_upper (s);
-					status = gsl_root_test_interval(phiLH_lo, phiLH_hi, 0, 0.0000000001);
+					status = gsl_root_test_interval(phiLH_lo, phiLH_hi, 0, 0.00000000000001);
 					//if (status == GSL_SUCCESS) printf ("Converged:\n");
 					//printf ("%5d [%.7f, %.7f] %.7f %+.7f \n",iter, phiLH_lo, phiLH_hi, result, phiLH_hi - phiLH_lo);
 				}
 				while (status == GSL_CONTINUE && iter < max_iter);
 				if (iter>90){
-					//printf("For fil %i I did %i iterations \n",n,iter);
+					printf("For fil %i I did %i iterations \n",n,iter);
 				}
 				if (iter < max_iter){
 					phi_LH[n] = result;
 				}
 				else{
-					phi_LH[n] = gsl_rng_uniform (r) * 2.0 * PI ;
-					mask_fils[n] = 0L;
+					phi_LH[n] = 0.0;  //gsl_rng_uniform (r) * 2.0 * PI ;
 					printf("Filament %i did not converge \n",n);
 				}
 			}
 			double centers_mod = 0.0;
-			double hatZ[3], rhat[3], local_B_proj[3], hatY[3], Lhat0[3], filament_vec_proj[3] ;
+			double hatZ[3], rhat[3], local_B_proj[3], hatY[3], Lhat0[3], filament_vec_proj[3], vecY[3] ;
 			for(j=0;j<3;j++) hatZ[j] = local_magfield[j] / sqrt(local_magfield_mod) ;
 			
 			for(j=0;j<3;j++) centers_mod += pow(center[j],2) ;
@@ -217,12 +224,12 @@ static PyObject *Get_Angles_Asymmetry(PyObject *self, PyObject *args){
 			for(j=0;j<3;j++) dot_product += local_magfield[j] * rhat[j] ;
 			for(j=0;j<3;j++) local_B_proj[j] = local_magfield[j]  - dot_product * rhat[j] ;
 			// this is cross product 
-			vecY[n*3+0] = (hatZ[1]*random_vector_ptr[n*3+2] - hatZ[2]*random_vector_ptr[n*3+1]) ;
-			vecY[n*3+1] = (hatZ[2]*random_vector_ptr[n*3+0] - hatZ[0]*random_vector_ptr[n*3+2]) ;
-			vecY[n*3+2] = (hatZ[0]*random_vector_ptr[n*3+1] - hatZ[1]*random_vector_ptr[n*3+0]) ;
+			vecY[0] = (hatZ[1]*random_vector_ptr[n*3+2] - hatZ[2]*random_vector_ptr[n*3+1]) ;
+			vecY[1] = (hatZ[2]*random_vector_ptr[n*3+0] - hatZ[0]*random_vector_ptr[n*3+2]) ;
+			vecY[2] = (hatZ[0]*random_vector_ptr[n*3+1] - hatZ[1]*random_vector_ptr[n*3+0]) ;
 			double vecY_mod = 0.0;
-			for(j=0;j<3;j++) vecY_mod += pow(vecY[n*3+j],2) ;
-			for(j=0;j<3;j++) hatY[j] = vecY[n*3+j] / sqrt(vecY_mod) ;
+			for(j=0;j<3;j++) vecY_mod += pow(vecY[j],2) ;
+			for(j=0;j<3;j++) hatY[j] = vecY[j] / sqrt(vecY_mod) ;
 			// rotate hatZ around hatY by theta_LH using Rodrigues formula
 			double cross_product[3] ;
 			cross_product[0] = (hatY[1]*hatZ[2] - hatY[2]*hatZ[1]) ;
@@ -308,13 +315,8 @@ static PyObject *Get_Angles_Asymmetry(PyObject *self, PyObject *args){
 	npy_intp npy_shape_thetaL[1] = {Nfil_};
 	PyObject *arr_thetaL = PyArray_SimpleNewFromData(1,npy_shape_thetaL, NPY_DOUBLE, thetaL);
 	
-	//vecY: this is the vector random_vecs crosspod hatZ, where hatZ is the unit vector along the local mag field. We do the rotation by angle thetaLH around this vector
-	npy_intp npy_shape_vecY[2] = {Nfil_,3};
-	PyObject *arr_vecY = PyArray_SimpleNewFromData(2,npy_shape_vecY, NPY_DOUBLE, vecY);
-	
-	//maskfils:
-	npy_intp npy_shape_maskfils[1] = {Nfil_};
-	PyObject *arr_maskfils = PyArray_SimpleNewFromData(1,npy_shape_maskfils, NPY_INT, mask_fils);
+	npy_intp npy_shape_fn_evaluated[2] = {Nfil_,361};
+	PyObject *arr_fn_evaluated = PyArray_SimpleNewFromData(2,npy_shape_fn_evaluated, NPY_DOUBLE, fn_evaluated);
 	
 	PyArray_ENABLEFLAGS((PyArrayObject *)arr_angles, NPY_OWNDATA);
 	PyArray_ENABLEFLAGS((PyArrayObject *)arr_Lhat, NPY_OWNDATA);
@@ -322,19 +324,104 @@ static PyObject *Get_Angles_Asymmetry(PyObject *self, PyObject *args){
 	PyArray_ENABLEFLAGS((PyArrayObject *)arr_phi_LH, NPY_OWNDATA);
 	PyArray_ENABLEFLAGS((PyArrayObject *)arr_thetaH, NPY_OWNDATA);
 	PyArray_ENABLEFLAGS((PyArrayObject *)arr_thetaL, NPY_OWNDATA);
-	PyArray_ENABLEFLAGS((PyArrayObject *)arr_vecY, NPY_OWNDATA);
-	PyArray_ENABLEFLAGS((PyArrayObject *)arr_maskfils, NPY_OWNDATA);
+	PyArray_ENABLEFLAGS((PyArrayObject *)arr_fn_evaluated, NPY_OWNDATA);
 	
-	PyObject *rtrn = PyTuple_New(8);
+	PyObject *rtrn = PyTuple_New(7);
 	PyTuple_SetItem(rtrn, 0, arr_angles);
 	PyTuple_SetItem(rtrn, 1, arr_Lhat);
 	PyTuple_SetItem(rtrn, 2, arr_psi_LH);
 	PyTuple_SetItem(rtrn, 3, arr_phi_LH);
 	PyTuple_SetItem(rtrn, 4, arr_thetaH);
 	PyTuple_SetItem(rtrn, 5, arr_thetaL);
-	PyTuple_SetItem(rtrn, 6, arr_vecY);
-	PyTuple_SetItem(rtrn, 7, arr_maskfils);
+	PyTuple_SetItem(rtrn, 6, arr_fn_evaluated);
 	return rtrn ;
+}
+static PyObject *permutations(PyObject *self, PyObject *args){
+	PyObject *theta;
+	PyObject *psi;
+	PyObject *Nfils;
+	PyObject *blocksize;
+	PyObject *shuffle;
+	if (!PyArg_ParseTuple(args, "OOOOO",&theta, &psi, &Nfils, &blocksize, &shuffle))
+		return NULL;
+	int Nfils_ = (int) PyLong_AsLong(Nfils);
+	int blocksize_ = (int) PyLong_AsLong(blocksize);
+	int shuffle_ = (int) PyLong_AsLong(shuffle);
+	int stop = 0, Nindices=0, c=0;
+	int *indices = calloc(Nfils_,sizeof(int));
+	
+	double *theta_ = PyArray_DATA(theta);
+	double *psi_ = PyArray_DATA(psi);
+	
+	// permutations
+	const gsl_rng_type *T_rand;
+	gsl_rng *r;
+	gsl_rng_env_setup();
+	T_rand = gsl_rng_default;
+	r = gsl_rng_alloc (T_rand);
+	
+	gsl_permutation *p_indices_perm = gsl_permutation_alloc(Nfils_); // these are all the indices of filaments
+	gsl_permutation_init (p_indices_perm); // this initializes to 0,...,Nfils-1
+	
+	while(stop == 0){
+		Nindices=0; // remember that Nindices started from 0, so the number of impossible angles is Nindices+1
+		for(int i=0;i<Nfils_;i++){
+			if (fabs(psi_[i])>fabs(theta_[i])){
+				indices[Nindices] = i;
+				Nindices++;
+			}
+		}
+		printf("At the beginning of the cycle I have %i impossible angles\n",Nindices+1);
+		if (shuffle_==1){
+			gsl_ran_shuffle (r, indices, Nindices+1, sizeof(int) );
+		}
+		gsl_ran_shuffle (r, p_indices_perm->data, Nfils_, sizeof(size_t));
+		c = 0;
+		int Nindices_for;
+		if (Nindices+1>blocksize_)
+			Nindices_for = blocksize_;
+		else if (0<Nindices+1<=blocksize)
+			Nindices_for = Nindices+1;
+		else{
+			stop = 1;
+			break;
+		}
+		for(int idx=0;idx<Nindices_for;idx++){
+			int idx_idx = indices[idx];
+			while(fabs(psi_[idx_idx])>fabs(theta_[idx_idx])){
+				// first we check that the c index is not idx, i.e. you cannot permutate with yourself. Also we make sure that c will not swap an index we fixed before
+				int idx_c = (int) gsl_permutation_get(p_indices_perm, c%Nfils_);
+				if (idx_c == idx_idx){
+					c++ ;
+					continue;
+				}
+				// check if the abs(psiLH) of the element indices_perm[c] is smaller than abs(theta_LH)
+				// if changing idx <==> indices_perm[c%N] mantains the conditions, then we make the swap
+				if ( (fabs(psi_[idx_c]) <= fabs(theta_[idx_idx])) && (fabs(psi_[idx_idx])<=fabs(theta_[idx_c])) ){
+					// in this case swapping mantains the conditions, so we do it
+					double buffer = psi_[idx_idx];
+					psi_[idx_idx] = psi_[idx_c];
+					psi_[idx_c] = buffer;
+					c++;
+				}
+				else{
+					c++;
+				}
+				if ((int) c/Nfils_ == 1){
+					stop = 1;
+					break;
+				}
+			}
+			if(stop){
+				break;
+			}
+			
+		}
+	}
+	free(indices);
+	gsl_permutation_free (p_indices_perm);
+	gsl_rng_free (r);
+	Py_RETURN_NONE;
 }
 static PyObject *Get_Angles(PyObject *self, PyObject *args){
 	/* Getting the elements */
@@ -1109,6 +1196,7 @@ static PyMethodDef FilamentPaintMethods[] = {
   {"Paint_Filament_Shells", Paint_Filament_Shells, METH_VARARGS,NULL},
   {"Get_Angles", Get_Angles, METH_VARARGS,NULL},
   {"Get_Angles_Asymmetry", Get_Angles_Asymmetry, METH_VARARGS, NULL},
+  {"Permutations", permutations, METH_VARARGS, NULL},
   {"Reject_Big_Filaments", Reject_Big_Filaments, METH_VARARGS,NULL},
  {NULL, NULL, 0, NULL}        /* Sentinel */
 };
