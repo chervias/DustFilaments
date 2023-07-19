@@ -1,8 +1,8 @@
-from DustFilaments.FilamentPaint import Get_Angles, Get_Angles_Asymmetry, Reject_Big_Filaments, Permutations
+from DustFilaments.FilamentPaint import Get_Angles, Get_Angles_Asymmetry, Reject_Big_Filaments#, Permutations
 import numpy as np
 import healpy as hp
 from scipy.stats import norm, laplace_asymmetric
-import os
+#import os
 
 H_PLANCK =  6.6260755e-34
 K_BOLTZ = 1.380658e-23
@@ -124,7 +124,7 @@ def get_FilPop(Nfil,theta_LH_RMS,size_ratio,size_scale,slope,eta_eps,eta_fpol,Bc
 	Npix_box = int(Bcube.shape[0])
 	max_length		= 1.0
 	np.random.seed(seed)
-	os.environ["GSL_RNG_SEED"] = str(seed)
+	#os.environ["GSL_RNG_SEED"] = str(seed)
 	theta_LH_RMS_radians = np.radians(theta_LH_RMS)
 	realNfils, centers = get_centers(galactic_plane,null_Gplane,fixed_distance,dust_template,nside,Nfil,size,mask_file) # this method will determine the total number of filaments, which is different if we do the poisson thing
 	# get angles now is on C
@@ -139,6 +139,9 @@ def get_FilPop(Nfil,theta_LH_RMS,size_ratio,size_scale,slope,eta_eps,eta_fpol,Bc
 		U = np.random.uniform(0.0,1.0,realNfils)
 		theta_LH = norm.ppf(U, loc=0.0, scale=theta_LH_RMS_radians)
 		psi_LH_random = laplace_asymmetric.ppf(U, kappa_asymmetry, loc=0.0, scale=lambda_asymmetry**-1 )
+		# we sort the theta and psi by fabs
+		theta_LH = np.array(sorted(theta_LH,key=np.fabs))
+		psi_LH_random = np.array(sorted(psi_LH_random,key=np.fabs))
 		if correct_impossible_angles:
 			print("shape of indices of imposible angles = ",np.argwhere(np.fabs(psi_LH_random) > np.fabs(theta_LH)).shape)
 			if int(0.003*realNfils) == 0:
