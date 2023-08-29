@@ -23,7 +23,8 @@ double fn(double phiLH, void *params){
 	double random_vec[3] ; random_vec[0] = random_vec_x; random_vec[1] = random_vec_y; random_vec[2] = random_vec_z;
 	
 	double hatZ[3], rhat[3], local_B_proj[3], hatY[3], vecY[3], Lhat0[3], Lhat[3], filament_vec_proj[3], cross_product[3];
-	double local_magfield_mod = 0.0, centers_mod=0.0, dot_product=0.0, vecY_mod=0.0, dot_product2=0.0;
+	double local_magfield_mod = 0.0, centers_mod=0.0, vecY_mod=0.0;
+	long double dot_product=0.0, dot_product2=0.0 ;
 	for(j=0;j<3;j++) local_magfield_mod += pow(Bcube_center[j],2);
 	for(j=0;j<3;j++) hatZ[j] = Bcube_center[j] / sqrt(local_magfield_mod) ;
 	for(j=0;j<3;j++) centers_mod += pow(center_vec[j],2) ;
@@ -62,5 +63,5 @@ double fn(double phiLH, void *params){
 	dot_product = 0.0 ;
 	for(j=0;j<3;j++) dot_product += rhat[j]*cross_product[j] ;
 	for(j=0;j<3;j++) dot_product2 += filament_vec_proj[j]*local_B_proj[j];
-	return atan2(dot_product,dot_product2) - psiLH ;
+	return (double) atan2l(dot_product,dot_product2) - psiLH ;
 }

@@ -121,55 +121,66 @@ def get_beta_T(beta_template,T_template,nside,Nfil,centers,sigma_rho):
 	T_array = T_map_nside[0][pixels]
 	return np.ascontiguousarray(beta_array),np.ascontiguousarray(T_array)
 def get_FilPop(Nfil,theta_LH_RMS,size_ratio,size_scale,slope,eta_eps,eta_fpol,Bcube,size,seed,alpha,beta,nside,beta_template,T_template,ell_limit,sigma_rho,dust_template=None,mask_file=None,fixed_distance=False,fixed_size=False,galactic_plane=False,null_Gplane=False,random_fpol=True,fpol_template=None,asymmetry=False,lambda_asymmetry=1.0, kappa_asymmetry=1.0, correct_impossible_angles=False):
-	Npix_box = int(Bcube.shape[0])
-	max_length		= 1.0
-	np.random.seed(seed)
-	#os.environ["GSL_RNG_SEED"] = str(seed)
-	theta_LH_RMS_radians = np.radians(theta_LH_RMS)
-	realNfils, centers = get_centers(galactic_plane,null_Gplane,fixed_distance,dust_template,nside,Nfil,size,mask_file) # this method will determine the total number of filaments, which is different if we do the poisson thing
-	# get angles now is on C
-	u_rand   = np.random.uniform(-1.0,1.0,realNfils)
-	phi_rand = np.random.uniform(0.0,2.0*np.pi,realNfils)
-	random_vectors = np.zeros((realNfils,3))
-	random_vectors[:,0] = np.sqrt(1. - u_rand**2)*np.cos(phi_rand)
-	random_vectors[:,1] = np.sqrt(1. - u_rand**2)*np.sin(phi_rand)
-	random_vectors[:,2] = u_rand
-	if asymmetry:
-		# now we use a normal and a asymmetric laplace
-		U = np.random.uniform(0.0,1.0,realNfils)
-		theta_LH = norm.ppf(U, loc=0.0, scale=theta_LH_RMS_radians)
-		psi_LH_random = laplace_asymmetric.ppf(U, kappa_asymmetry, loc=0.0, scale=lambda_asymmetry**-1 )
-		# we sort the theta and psi by fabs
-		theta_LH = np.array(sorted(theta_LH,key=np.fabs))
-		psi_LH_random = np.array(sorted(psi_LH_random,key=np.fabs))
-		if correct_impossible_angles:
-			print("shape of indices of imposible angles = ",np.argwhere(np.fabs(psi_LH_random) > np.fabs(theta_LH)).shape)
-			if int(0.003*realNfils) == 0:
-				Permutations(theta_LH, psi_LH_random, realNfils, 1, 1)
-			else:
-				mask_indices = np.fabs(psi_LH_random) > np.fabs(theta_LH)
-				while(mask_indices.sum()/realNfils*100.0 > 0.1):
-					Permutations(theta_LH, psi_LH_random, realNfils, int(0.003*realNfils), 1)
-					Permutations(theta_LH, psi_LH_random, realNfils, int(0.003*realNfils), 0)
-					mask_indices = np.fabs(psi_LH_random) > np.fabs(theta_LH)
-				print("At the end, I have %i impossible angles"%(mask_indices.sum()))
-		results = Get_Angles_Asymmetry( realNfils, Bcube, Npix_box, random_vectors, psi_LH_random, theta_LH, size, centers , theta_LH_RMS_radians)
-		(angles, long_vec, psi_LH, phi_LH, thetaH, thetaL, fn_evaluated) = results
-	else:
-		theta_LH		= np.fabs(np.random.normal(loc=0,scale=theta_LH_RMS_radians,size=(realNfils)))
-		random_azimuth = np.random.uniform(0.0,2.0*np.pi,size=(realNfils))
-		results = Get_Angles( realNfils, Bcube, Npix_box, random_vectors, random_azimuth, theta_LH, size, centers , theta_LH_RMS_radians)
-		(angles, long_vec, psi_LH, thetaH, thetaL, vecY) = results
-	sizes = get_sizes(realNfils,fixed_size,size_scale,slope,eta_eps,size_ratio)
-	#print("I have calculated the centers, angles, sizes")
-	mask,theta_a = Reject_Big_Filaments(sizes, thetaL, size_ratio, centers, realNfils, ell_limit, size_scale, eta_eps)
-	fpol0 = get_fpol(alpha,beta,realNfils,sizes,size_scale,nside,centers,eta_fpol,random_fpol,fpol_template)
-	beta_array,T_array = get_beta_T(beta_template,T_template,nside,realNfils,centers,sigma_rho)
-	final_Nfils = int(realNfils)
-	if asymmetry:
-		mask_fils = np.fabs(theta_LH) >= np.fabs(psi_LH)
-		return centers, angles, sizes, psi_LH, psi_LH_random, phi_LH, theta_LH, thetaH, thetaL, fpol0, beta_array, T_array, final_Nfils, mask, theta_a, fn_evaluated, mask_fils
-	else:
-		return centers, angles, sizes, psi_LH, thetaH, thetaL, fpol0, beta_array, T_array, final_Nfils, mask, theta_a, vecY
+    Npix_box = int(Bcube.shape[0])
+    max_length		= 1.0
+    np.random.seed(seed)
+    #os.environ["GSL_RNG_SEED"] = str(seed)
+    theta_LH_RMS_radians = np.radians(theta_LH_RMS)
+    realNfils, centers = get_centers(galactic_plane,null_Gplane,fixed_distance,dust_template,nside,Nfil,size,mask_file) # this method will determine the total number of filaments, which is different if we do the poisson thing
+    if asymmetry:
+        # random_vectors will be the small vector x pointing down in the triad system
+        #colat, long = hp.vec2ang(centers)
+        #random_vectors = np.array([np.cos(colat)*np.cos(long), np.cos(colat)*np.sin(long), -np.sin(colat)]).T
+        u_rand   = np.random.uniform(-1.0,1.0,realNfils)
+        phi_rand = np.random.uniform(0.0,2.0*np.pi,realNfils)
+        random_vectors = np.zeros((realNfils,3))
+        random_vectors[:,0] = np.sqrt(1. - u_rand**2)*np.cos(phi_rand)
+        random_vectors[:,1] = np.sqrt(1. - u_rand**2)*np.sin(phi_rand)
+        random_vectors[:,2] = u_rand
+        
+        # now we use a normal and a asymmetric laplace
+        U = np.random.uniform(0.0,1.0,realNfils)
+        theta_LH = norm.ppf(U, loc=0.0, scale=theta_LH_RMS_radians)
+        psi_LH_random = laplace_asymmetric.ppf(U, kappa_asymmetry, loc=0.0, scale=lambda_asymmetry**-1 )
+        #psi_LH_random = norm.ppf(U, loc=np.radians(0.25), scale=np.radians(10.0))
+        # we sort the theta and psi by fabs
+        theta_LH = np.array(sorted(theta_LH,key=np.fabs))
+        psi_LH_random = np.array(sorted(psi_LH_random,key=np.fabs))
+        print("shape of indices of imposible angles = ",np.argwhere(np.fabs(psi_LH_random) > np.fabs(theta_LH)).shape)
+        if correct_impossible_angles:
+            print("shape of indices of imposible angles = ",np.argwhere(np.fabs(psi_LH_random) > np.fabs(theta_LH)).shape)
+            if int(0.003*realNfils) == 0:
+                Permutations(theta_LH, psi_LH_random, realNfils, 1, 1)
+            else:
+                mask_indices = np.fabs(psi_LH_random) > np.fabs(theta_LH)
+                while(mask_indices.sum()/realNfils*100.0 > 0.1):
+                    Permutations(theta_LH, psi_LH_random, realNfils, int(0.003*realNfils), 1)
+                    Permutations(theta_LH, psi_LH_random, realNfils, int(0.003*realNfils), 0)
+                    mask_indices = np.fabs(psi_LH_random) > np.fabs(theta_LH)
+                print("At the end, I have %i impossible angles"%(mask_indices.sum()))
+        results = Get_Angles_Asymmetry( realNfils, Bcube, Npix_box, random_vectors, psi_LH_random, theta_LH, size, centers , theta_LH_RMS_radians)
+        (angles, long_vec, psi_LH, phi_LH, phi_LH_1, phi_LH_2, thetaH, thetaL, fn_evaluated) = results
+    else:
+        u_rand   = np.random.uniform(-1.0,1.0,realNfils)
+        phi_rand = np.random.uniform(0.0,2.0*np.pi,realNfils)
+        random_vectors = np.zeros((realNfils,3))
+        random_vectors[:,0] = np.sqrt(1. - u_rand**2)*np.cos(phi_rand)
+        random_vectors[:,1] = np.sqrt(1. - u_rand**2)*np.sin(phi_rand)
+        random_vectors[:,2] = u_rand
+        theta_LH		= np.fabs(np.random.normal(loc=0,scale=theta_LH_RMS_radians,size=(realNfils)))
+        random_azimuth = np.random.uniform(0.0,2.0*np.pi,size=(realNfils))
+        results = Get_Angles( realNfils, Bcube, Npix_box, random_vectors, random_azimuth, theta_LH, size, centers , theta_LH_RMS_radians)
+        (angles, long_vec, psi_LH, thetaH, thetaL, vecY) = results
+    sizes = get_sizes(realNfils,fixed_size,size_scale,slope,eta_eps,size_ratio)
+    #print("I have calculated the centers, angles, sizes")
+    mask,theta_a = Reject_Big_Filaments(sizes, thetaL, size_ratio, centers, realNfils, ell_limit, size_scale, eta_eps)
+    fpol0 = get_fpol(alpha,beta,realNfils,sizes,size_scale,nside,centers,eta_fpol,random_fpol,fpol_template)
+    beta_array,T_array = get_beta_T(beta_template,T_template,nside,realNfils,centers,sigma_rho)
+    final_Nfils = int(realNfils)
+    if asymmetry:
+        mask_fils = np.fabs(theta_LH) >= np.fabs(psi_LH)
+        return centers, angles, sizes, psi_LH, psi_LH_random, phi_LH, phi_LH_1, phi_LH_2, theta_LH, thetaH, thetaL, fpol0, beta_array, T_array, final_Nfils, mask, theta_a, fn_evaluated, mask_fils
+    else:
+        return centers, angles, sizes, psi_LH, thetaH, thetaL, fpol0, beta_array, T_array, final_Nfils, mask, theta_a, vecY
 	#return phiLH_arr, fn;
 
