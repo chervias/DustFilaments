@@ -137,16 +137,29 @@ def get_FilPop(Nfil,theta_LH_RMS,size_ratio,size_scale,slope,eta_eps,eta_fpol,Bc
         random_vectors[:,0] = np.sqrt(1. - u_rand**2)*np.cos(phi_rand)
         random_vectors[:,1] = np.sqrt(1. - u_rand**2)*np.sin(phi_rand)
         random_vectors[:,2] = u_rand
-        
         # now we use a normal and a asymmetric laplace
-        U = np.random.uniform(0.0,1.0,realNfils)
-        theta_LH = norm.ppf(U, loc=0.0, scale=theta_LH_RMS_radians)
-        psi_LH_random = laplace_asymmetric.ppf(U, kappa_asymmetry, loc=0.0, scale=lambda_asymmetry**-1 )
+        N_good = 0 ; psi_final = [] ; theta_final = []
+        while(N_good <= realNfils):
+            U = np.random.uniform(0.0,1.0,realNfils)
+            #U2 = rng.uniform(0.0,1.0,N)
+            theta_LH = norm.ppf(U, loc=0.0, scale=theta_LH_RMS_radians)
+            psi_LH_random = laplace_asymmetric.ppf(U, kappa_asymmetry, loc=0.0, scale=lambda_asymmetry**-1 )
+            theta_LH = np.array(sorted(theta_LH,key=np.fabs))
+            psi_LH_random = np.array(sorted(psi_LH_random,key=np.fabs))
+            # these are the values I want to keep
+            mask_ = np.fabs(psi_LH_random) <= np.fabs(theta_LH)
+            psi_final.append(psi_LH_random[mask_])
+            theta_final.append(theta_LH[mask_])
+            N_good += np.sum(mask_)
+        psi_LH_random = np.concatenate(psi_final)
+        theta_LH = np.concatenate(theta_final)
+        p = np.random.permutation(len(theta_LH))
+        theta_LH = theta_LH[p] ; psi_LH_random = psi_LH_random[p]
+        theta_LH = theta_LH[:realNfils] ; psi_LH_random = psi_LH_random[:realNfils]
         #psi_LH_random = norm.ppf(U, loc=np.radians(0.25), scale=np.radians(10.0))
         # we sort the theta and psi by fabs
-        theta_LH = np.array(sorted(theta_LH,key=np.fabs))
-        psi_LH_random = np.array(sorted(psi_LH_random,key=np.fabs))
         print("shape of indices of imposible angles = ",np.argwhere(np.fabs(psi_LH_random) > np.fabs(theta_LH)).shape)
+        """
         if correct_impossible_angles:
             print("shape of indices of imposible angles = ",np.argwhere(np.fabs(psi_LH_random) > np.fabs(theta_LH)).shape)
             if int(0.003*realNfils) == 0:
@@ -158,6 +171,7 @@ def get_FilPop(Nfil,theta_LH_RMS,size_ratio,size_scale,slope,eta_eps,eta_fpol,Bc
                     Permutations(theta_LH, psi_LH_random, realNfils, int(0.003*realNfils), 0)
                     mask_indices = np.fabs(psi_LH_random) > np.fabs(theta_LH)
                 print("At the end, I have %i impossible angles"%(mask_indices.sum()))
+        """
         results = Get_Angles_Asymmetry( realNfils, Bcube, Npix_box, random_vectors, psi_LH_random, theta_LH, size, centers , theta_LH_RMS_radians)
         (angles, long_vec, psi_LH, phi_LH, phi_LH_1, phi_LH_2, thetaH, thetaL, fn_evaluated) = results
     else:
