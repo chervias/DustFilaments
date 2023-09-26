@@ -32,22 +32,17 @@ static PyObject *Reject_Big_Filaments(PyObject *self, PyObject *args){
 	PyObject *nu_index = NULL;
 	if (!PyArg_ParseTuple(args, "OOOOOOOO",&sizes, &thetaL, &size_ratio, &centers, &Nfil, &ell_limit, &size_scale, &nu_index)) 
 		return NULL;
-	
 	int n;
-	
 	int Nfil_ = (int) PyLong_AsLong(Nfil);
 	double size_ratio_ = PyFloat_AsDouble(size_ratio);
 	double size_scale_ = PyFloat_AsDouble(size_scale);
 	double ell_limit_ = PyFloat_AsDouble(ell_limit);
 	double nu_index_ = PyFloat_AsDouble(nu_index);
-	
 	double *centers_ptr = PyArray_DATA(centers);
 	double *sizes_ptr = PyArray_DATA(sizes);
 	double *thetaL_ptr = PyArray_DATA(thetaL);
-	
 	long *mask = calloc(Nfil_,sizeof(long));
 	double *theta_a = calloc(Nfil_,sizeof(double));
-	
 	#pragma omp parallel for schedule(static)
 	for (n=0;n<Nfil_;n++){
 		double centers_mod = 0.0 ;
@@ -91,17 +86,14 @@ static PyObject *Get_Angles_Asymmetry(PyObject *self, PyObject *args){
 		return NULL;
 	int Nfil_ = (int) PyLong_AsLong(Nfil);
 	int Npix_box_ = (int) PyLong_AsLong(Npix_box);
-	
 	// The Bcube will follow the ordering of Kevin's code [iz,iy,ix,]
 	double *Bcube_ptr = PyArray_DATA(Bcube);
 	double *centers_ptr = PyArray_DATA(centers);
 	double *random_vector_ptr = PyArray_DATA(random_vector);
 	double *random_psiLH_ptr = PyArray_DATA(random_psiLH);
 	double *random_thetaLH_ptr = PyArray_DATA(random_thetaLH);
-	
 	double size_ = PyFloat_AsDouble(size);
 	double theta_LH_RMS_ = PyFloat_AsDouble(theta_LH_RMS);
-	
 	// define the angles array to output
 	double *angles = calloc(Nfil_*2,sizeof(double));
 	double *Lhat = calloc(Nfil_*3,sizeof(double));
@@ -112,9 +104,8 @@ static PyObject *Get_Angles_Asymmetry(PyObject *self, PyObject *args){
 	double *thetaH = calloc(Nfil_,sizeof(double));
 	double *thetaL = calloc(Nfil_,sizeof(double));
 	double *fn_evaluated = calloc(Nfil_*361,sizeof(double));
-	
 	int max_iter = 100 ;
-	#pragma omp parallel 
+	#pragma omp parallel
 	{
 	int status, iter, index_phi;
 	const gsl_root_fsolver_type *T;
@@ -122,17 +113,21 @@ static PyObject *Get_Angles_Asymmetry(PyObject *self, PyObject *args){
 	gsl_root_fsolver *s;
 	gsl_rng *r;
 	gsl_rng_env_setup();
-	double phiLH_lo, phiLH_hi, phiLH_hi_first;
+	double phiLH_lo, phiLH_hi, phiLH_hi_first, phi_step;
 	gsl_function F;
 	F.function = &fn;
 	T = gsl_root_fsolver_bisection;
 	s = gsl_root_fsolver_alloc (T);
-	
 	T_rand = gsl_rng_default;
 	r = gsl_rng_alloc (T_rand);
-	
 	#pragma omp for schedule(static)
 	for(int n=0;n<Nfil_;n++){
+		if(fabs(fabs(random_thetaLH_ptr[n])-fabs(random_psiLH_ptr[n])) >  0.01*PI/180.0){
+			phi_step = 1.0;
+		}
+		else{
+			phi_step = 0.1;
+		}
 		double local_magfield[3], center[3], random_vector[3] ;
 		int j;
 		for(j=0;j<3;j++){
@@ -164,83 +159,86 @@ static PyObject *Get_Angles_Asymmetry(PyObject *self, PyObject *args){
     			double result=0.0;
     			phiLH_lo = 0.0; phiLH_hi = 0.5 * PI / 180.0; // first range is (0,0.5) degrees 
     			struct fn_params params = {random_thetaLH_ptr[n], random_psiLH_ptr[n], local_magfield[0],local_magfield[1],local_magfield[2], center[0], center[1], center[2], random_vector[0], random_vector[1], random_vector[2]};
-    			
-    			// I print the function evaluated every 1 deg between -pi and +pi
-    			/*
-                int jj=0;
-    			for(double phi__ = -1*PI ; phi__<= PI ; phi__ += PI/180.0){
-    				fn_evaluated[n*361 + jj] = fn(phi__, &params);
-    				jj += 1;
-    			}
-    			*/
     			// we need to make sure that the intervals have opposite sign
     			// while they don't have opposite signs, we will move the range 1 degree to the right, we do this until the high end of the range passes phiLH=PI. By that point we should have a root in the range, if not that means we had bad luck on the orientation of the magnetic field. We can redraw a new random_vector .
     			double y_lo=1.0, y_hi=1.0;
     			int doibreak = 0;
+				int nocross = 0; // this is true when a filament did not cross the y=0 line, which could happen if abs(psi) is very similar or equal to abs(theta) and by numerical issues you might not cross the y=0 line
     			while(doibreak==0){
+					if (phiLH_hi>2*PI){
+						printf("For filament %i, I could not find a root in the interval 0-2pi\n",n);
+						doibreak = 1;
+						nocross = 1;
+					}
     				y_lo = fn(phiLH_lo,&params);
     				y_hi = fn(phiLH_hi,&params);
     				if (y_lo*y_hi < 0.0){
     					doibreak = 1;
     				}
     				else{
-    					phiLH_hi += 1.0 * PI / 180.0 ;
+    					phiLH_hi += phi_step * PI / 180.0 ;
     				}
     			}
-                // we copy the value 
-                phiLH_hi_first = phiLH_hi;
-                // we try to solve the eq numerically
-                F.params = &params;
-                gsl_root_fsolver_set (s, &F, phiLH_lo, phiLH_hi);
-                do{
-                    iter++;
-                    status = gsl_root_fsolver_iterate (s);
-                    result = gsl_root_fsolver_root (s);
-                    phiLH_lo = gsl_root_fsolver_x_lower (s);
-                    phiLH_hi = gsl_root_fsolver_x_upper (s);
-                    status = gsl_root_test_interval(phiLH_lo, phiLH_hi, 0, 0.00000000000001);
-                }
-                while (status == GSL_CONTINUE && iter < max_iter);
-                if (iter>90){
-                    printf("For fil %i I did %i iterations \n",n,iter);
-                }
-                if (iter < max_iter){
-                    phi_LH_one[n] = result;
-                }
-                else{
-                    phi_LH_one[n] = 0.0;  //gsl_rng_uniform (r) * 2.0 * PI ;
-                    printf("Filament %i did not converge \n",n);
-                }
-                // We find the second phi angles
-                // we have to reset a few variables
-    			iter = 0;
-    			result=0.0;
-    			phiLH_lo = phiLH_hi_first; phiLH_hi = 2.0 * PI;
-    			struct fn_params params2 = {random_thetaLH_ptr[n], random_psiLH_ptr[n], local_magfield[0],local_magfield[1],local_magfield[2], center[0], center[1], center[2], random_vector[0], random_vector[1], random_vector[2]};
-    			// we need to make sure that the intervals have opposite sign
-                // we try to solve the eq numerically
-                F.params = &params2;
-                gsl_root_fsolver_set (s, &F, phiLH_lo, phiLH_hi);
-                do{
-                    iter++;
-                    status = gsl_root_fsolver_iterate (s);
-                    result = gsl_root_fsolver_root (s);
-                    phiLH_lo = gsl_root_fsolver_x_lower (s);
-                    phiLH_hi = gsl_root_fsolver_x_upper (s);
-                    status = gsl_root_test_interval(phiLH_lo, phiLH_hi, 0, 0.00000000000001);
-                }
-                while (status == GSL_CONTINUE && iter < max_iter);
-                if (iter>90){
-                    printf("For fil %i I did %i iterations \n",n,iter);
-                }
-                if (iter < max_iter){
-                    phi_LH_two[n] = result;
-                }
-                else{
-                    phi_LH_two[n] = 0.0;  //gsl_rng_uniform (r) * 2.0 * PI ;
-                    printf("Filament %i did not converge \n",n);
-                }
-            }
+				if (nocross==1){ // this is for when you do not cross the y=0 line due to numerical issues as outlined above
+					phi_LH_one[n] = 0.0;
+					phi_LH_two[n] = 0.0;
+				}
+				else{
+					// we copy the value
+	                phiLH_hi_first = phiLH_hi;
+	                // we try to solve the eq numerically
+	                F.params = &params;
+	                gsl_root_fsolver_set (s, &F, phiLH_lo, phiLH_hi);
+	                do{
+	                    iter++;
+	                    status = gsl_root_fsolver_iterate (s);
+	                    result = gsl_root_fsolver_root (s);
+	                    phiLH_lo = gsl_root_fsolver_x_lower (s);
+	                    phiLH_hi = gsl_root_fsolver_x_upper (s);
+	                    status = gsl_root_test_interval(phiLH_lo, phiLH_hi, 0, 0.00000000000001);
+	                }
+	                while (status == GSL_CONTINUE && iter < max_iter);
+	                if (iter>90){
+	                    printf("For fil %i I did %i iterations \n",n,iter);
+	                }
+	                if (iter < max_iter){
+	                    phi_LH_one[n] = result;
+	                }
+	                else{
+	                    phi_LH_one[n] = 0.0;  //gsl_rng_uniform (r) * 2.0 * PI ;
+	                    printf("Filament %i did not converge \n",n);
+	                }
+	                // We find the second phi angles
+	                // we have to reset a few variables
+	    			iter = 0;
+	    			result=0.0;
+	    			phiLH_lo = phiLH_hi_first; phiLH_hi = 2.0 * PI;
+	    			struct fn_params params2 = {random_thetaLH_ptr[n], random_psiLH_ptr[n], local_magfield[0],local_magfield[1],local_magfield[2], center[0], center[1], center[2], random_vector[0], random_vector[1], random_vector[2]};
+	    			// we need to make sure that the intervals have opposite sign
+	                // we try to solve the eq numerically
+	                F.params = &params2;
+	                gsl_root_fsolver_set (s, &F, phiLH_lo, phiLH_hi);
+	                do{
+	                    iter++;
+	                    status = gsl_root_fsolver_iterate (s);
+	                    result = gsl_root_fsolver_root (s);
+	                    phiLH_lo = gsl_root_fsolver_x_lower (s);
+	                    phiLH_hi = gsl_root_fsolver_x_upper (s);
+	                    status = gsl_root_test_interval(phiLH_lo, phiLH_hi, 0, 0.00000000000001);
+	                }
+	                while (status == GSL_CONTINUE && iter < max_iter);
+	                if (iter>90){
+	                    printf("For fil %i I did %i iterations \n",n,iter);
+	                }
+	                if (iter < max_iter){
+	                    phi_LH_two[n] = result;
+	                }
+	                else{
+	                    phi_LH_two[n] = 0.0;  //gsl_rng_uniform (r) * 2.0 * PI ;
+	                    printf("Filament %i did not converge \n",n);
+	                }
+	            }
+			}
             // we need to choose from either phi_LH_one or phi_LH_two
             index_phi = gsl_ran_bernoulli(r, 0.5);
             if (index_phi == 0){
@@ -249,18 +247,15 @@ static PyObject *Get_Angles_Asymmetry(PyObject *self, PyObject *args){
             else{
                 phi_LH_final[n] = phi_LH_two[n] ;
             }
-            
 			double centers_mod = 0.0;
 			double hatZ[3], rhat[3], local_B_proj[3], hatY[3], Lhat0[3], filament_vec_proj[3], vecY[3] ;
 			for(j=0;j<3;j++) hatZ[j] = local_magfield[j] / sqrt(local_magfield_mod) ;
-			
 			for(j=0;j<3;j++) centers_mod += pow(center[j],2) ;
 			for(j=0;j<3;j++) rhat[j] = center[j] / sqrt(centers_mod) ;
-			
 			long double dot_product = 0.0 ;
 			for(j=0;j<3;j++) dot_product += local_magfield[j] * rhat[j] ;
 			for(j=0;j<3;j++) local_B_proj[j] = local_magfield[j]  - dot_product * rhat[j] ;
-			// this is cross product 
+			// this is cross product
 			vecY[0] = (hatZ[1]*random_vector_ptr[n*3+2] - hatZ[2]*random_vector_ptr[n*3+1]) ;
 			vecY[1] = (hatZ[2]*random_vector_ptr[n*3+0] - hatZ[0]*random_vector_ptr[n*3+2]) ;
 			vecY[2] = (hatZ[0]*random_vector_ptr[n*3+1] - hatZ[1]*random_vector_ptr[n*3+0]) ;
@@ -275,7 +270,7 @@ static PyObject *Get_Angles_Asymmetry(PyObject *self, PyObject *args){
 			dot_product = 0.0 ;
 			for(j=0;j<3;j++) dot_product += hatY[j]*hatZ[j] ;
 			for(j=0;j<3;j++) Lhat0[j] = hatZ[j]*cos(random_thetaLH_ptr[n]) + cross_product[j]*sin(random_thetaLH_ptr[n]) + hatY[j]*dot_product*(1.0 - cos(random_thetaLH_ptr[n])) ;
-			
+
 			// We rotate Lhat0 around hatZ by phi using Rodrigues formula
 			cross_product[0] = (hatZ[1]*Lhat0[2] - hatZ[2]*Lhat0[1]) ;
 			cross_product[1] = (hatZ[2]*Lhat0[0] - hatZ[0]*Lhat0[2]) ;
@@ -290,7 +285,7 @@ static PyObject *Get_Angles_Asymmetry(PyObject *self, PyObject *args){
 			dot_product = 0.0 ;
 			for(j=0;j<3;j++) dot_product += Lhat[n*3+j]*rhat[j] ;
 			for(j=0;j<3;j++) filament_vec_proj[j] = Lhat[n*3+j] - dot_product * rhat[j] ;
-			
+
 			cross_product[0] = (filament_vec_proj[1]*local_B_proj[2] - filament_vec_proj[2]*local_B_proj[1]) ;
 			cross_product[1] = (filament_vec_proj[2]*local_B_proj[0] - filament_vec_proj[0]*local_B_proj[2]) ;
 			cross_product[2] = (filament_vec_proj[0]*local_B_proj[1] - filament_vec_proj[1]*local_B_proj[0]) ;
@@ -302,14 +297,12 @@ static PyObject *Get_Angles_Asymmetry(PyObject *self, PyObject *args){
 			{
 				psi_LH[n] = (double) atan2l(dot_product,dot_product2) ;
 			}
-			
 			dot_product = 0.0 ;
 			for(j=0;j<3;j++) dot_product += local_magfield[j] * rhat[j] ;
 			//#pragma omp critical
 			{
 				thetaH[n] = acos( dot_product / sqrt(local_magfield_mod) ) ;
 			}
-			
 			dot_product = 0.0 ;
 			for(j=0;j<3;j++) dot_product += Lhat[n*3+j] * rhat[j] ;
 			double Lhat_norm = 0.0;
@@ -326,42 +319,39 @@ static PyObject *Get_Angles_Asymmetry(PyObject *self, PyObject *args){
 	gsl_rng_free (r);
 	}
 	// return the arrays angles, Lhat , psi_LH , thetaH , thetaL
-	
 	// angles
 	npy_intp npy_shape_angles[2] = {Nfil_,2};
 	PyObject *arr_angles = PyArray_SimpleNewFromData(2,npy_shape_angles, NPY_DOUBLE, angles);
-	
 	// Lhat
 	npy_intp npy_shape_Lhat[2] = {Nfil_,3};
 	PyObject *arr_Lhat = PyArray_SimpleNewFromData(2,npy_shape_Lhat, NPY_DOUBLE, Lhat);
-	
-	// psi_LH 
+	// psi_LH
 	npy_intp npy_shape_psi_LH[1] = {Nfil_};
 	PyObject *arr_psi_LH = PyArray_SimpleNewFromData(1,npy_shape_psi_LH, NPY_DOUBLE, psi_LH);
-	
+
 	// phi_LH
 	npy_intp npy_shape_phi_LH_final[1] = {Nfil_};
 	PyObject *arr_phi_LH_final = PyArray_SimpleNewFromData(1,npy_shape_phi_LH_final, NPY_DOUBLE, phi_LH_final);
-    
+
     // phi_LH_two
 	npy_intp npy_shape_phi_LH_one[1] = {Nfil_};
 	PyObject *arr_phi_LH_one = PyArray_SimpleNewFromData(1,npy_shape_phi_LH_one, NPY_DOUBLE, phi_LH_one);
-    
+
     // phi_LH_two
 	npy_intp npy_shape_phi_LH_two[1] = {Nfil_};
 	PyObject *arr_phi_LH_two = PyArray_SimpleNewFromData(1,npy_shape_phi_LH_two, NPY_DOUBLE, phi_LH_two);
-	
+
 	// thetaH 
 	npy_intp npy_shape_thetaH[1] = {Nfil_};
 	PyObject *arr_thetaH = PyArray_SimpleNewFromData(1,npy_shape_thetaH, NPY_DOUBLE, thetaH);
-	
+
 	// thetaL
 	npy_intp npy_shape_thetaL[1] = {Nfil_};
 	PyObject *arr_thetaL = PyArray_SimpleNewFromData(1,npy_shape_thetaL, NPY_DOUBLE, thetaL);
-	
+
 	npy_intp npy_shape_fn_evaluated[2] = {Nfil_,361};
 	PyObject *arr_fn_evaluated = PyArray_SimpleNewFromData(2,npy_shape_fn_evaluated, NPY_DOUBLE, fn_evaluated);
-	
+
 	PyArray_ENABLEFLAGS((PyArrayObject *)arr_angles, NPY_OWNDATA);
 	PyArray_ENABLEFLAGS((PyArrayObject *)arr_Lhat, NPY_OWNDATA);
 	PyArray_ENABLEFLAGS((PyArrayObject *)arr_psi_LH, NPY_OWNDATA);
@@ -384,6 +374,7 @@ static PyObject *Get_Angles_Asymmetry(PyObject *self, PyObject *args){
 	PyTuple_SetItem(rtrn, 8, arr_fn_evaluated);
 	return rtrn ;
 }
+
 static PyObject *permutations(PyObject *self, PyObject *args){
 	PyObject *theta;
 	PyObject *psi;
