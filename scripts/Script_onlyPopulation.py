@@ -106,13 +106,16 @@ try:
 		asymmetry = False
 except KeyError:
 	asymmetry = False
+
 try:
-	if dict['correct_impossible_angles']:
-		correct_impossible_angles = True
-	else:
-		correct_impossible_angles = False
+    if dict['asymmetry_method']=='ALD':
+        asymmetry_method = 'ALD'
+    elif dict['asymmetry_method']=='norm':
+        asymmetry_method = 'norm'
+    else:
+        asymmetry_method = None
 except KeyError:
-	correct_impossible_angles = False
+    asymmetry_method = None
 
 # now make the population object
 
@@ -121,7 +124,12 @@ Bcube = get_MagField(float(dict['size_box']),Npixels_magfield,seed_magfield,path
 
 # Create the filament population object in rank 0
 if asymmetry:
-	centers,angles,sizes,psi_LH, psi_LH_random,phi_LH,phi_LH_1,phi_LH_2,theta_LH,thetaH,thetaL,fpol0,beta_array,T_array,final_Nfils, filaments_mask, theta_a, fn_evaluated, mask_fils = get_FilPop(int(dict['Nfil']), float(dict['theta_LH_RMS']), float(dict['size_ratio']), float(dict['size_scale']), float(dict['slope']), float(dict['eta_eps']), float(dict['eta_fpol']), Bcube, float(dict['size_box']), seed_population, float(dict['alpha']), float(dict['beta']), int(dict['nside']), str(dict['beta_template']), str(dict['T_template']), float(dict['ell_limit']), float(dict['sigma_rho']), dust_template=str(dict['dust_template']), mask_file=str(dict['mask_file']), galactic_plane=galactic_plane, null_Gplane=null_Gplane, fixed_distance=fixed_distance, fixed_size=fixed_size, random_fpol=random_fpol, fpol_template=fpol_template, asymmetry=asymmetry, kappa_asymmetry=float(dict['kappa_asymmetry']), lambda_asymmetry=float(dict['lambda_asymmetry']), correct_impossible_angles=correct_impossible_angles)
+    if asymmetry_method=='ALD':
+    	centers,angles,sizes,psi_LH, psi_LH_random,phi_LH,phi_LH_1,phi_LH_2,theta_LH,thetaH,thetaL,fpol0,beta_array,T_array,final_Nfils, filaments_mask, theta_a, fn_evaluated, mask_fils = get_FilPop(int(dict['Nfil']), float(dict['theta_LH_RMS']), float(dict['size_ratio']), float(dict['size_scale']), float(dict['slope']), float(dict['eta_eps']), float(dict['eta_fpol']), Bcube, float(dict['size_box']), seed_population, float(dict['alpha']), float(dict['beta']), int(dict['nside']), str(dict['beta_template']), str(dict['T_template']), float(dict['ell_limit']), float(dict['sigma_rho']), dust_template=str(dict['dust_template']), mask_file=str(dict['mask_file']), galactic_plane=galactic_plane, null_Gplane=null_Gplane, fixed_distance=fixed_distance, fixed_size=fixed_size, random_fpol=random_fpol, fpol_template=fpol_template, asymmetry=asymmetry, asymmetry_method=asymmetry_method, kappa_asymmetry=float(dict['kappa_asymmetry']), lambda_asymmetry=float(dict['lambda_asymmetry']),)
+    elif asymmetry_method=='norm':
+        centers,angles,sizes,psi_LH, psi_LH_random,phi_LH,phi_LH_1,phi_LH_2,theta_LH,thetaH,thetaL,fpol0,beta_array,T_array,final_Nfils, filaments_mask, theta_a, fn_evaluated, mask_fils = get_FilPop(int(dict['Nfil']), float(dict['theta_LH_RMS']), float(dict['size_ratio']), float(dict['size_scale']), float(dict['slope']), float(dict['eta_eps']), float(dict['eta_fpol']), Bcube, float(dict['size_box']), seed_population, float(dict['alpha']), float(dict['beta']), int(dict['nside']), str(dict['beta_template']), str(dict['T_template']), float(dict['ell_limit']), float(dict['sigma_rho']), dust_template=str(dict['dust_template']), mask_file=str(dict['mask_file']), galactic_plane=galactic_plane, null_Gplane=null_Gplane, fixed_distance=fixed_distance, fixed_size=fixed_size, random_fpol=random_fpol, fpol_template=fpol_template, asymmetry=asymmetry, asymmetry_method=asymmetry_method, center_asymmetry=float(dict['center_asymmetry']), sigma_asymmetry=float(dict['sigma_asymmetry']),)
+    else:
+        exit('No asymmetry method was chosen, exiting.')
 else:
-	centers, angles, sizes, psi_LH, thetaH, thetaL, fpol0, beta_array, T_array, final_Nfils, filaments_mask, theta_a, vecY = get_FilPop(int(dict['Nfil']), float(dict['theta_LH_RMS']), float(dict['size_ratio']), float(dict['size_scale']), float(dict['slope']), float(dict['eta_eps']), float(dict['eta_fpol']), Bcube, float(dict['size_box']), seed_population, float(dict['alpha']), float(dict['beta']), int(dict['nside']), str(dict['beta_template']), str(dict['T_template']), float(dict['ell_limit']), float(dict['sigma_rho']), dust_template=str(dict['dust_template']), mask_file=str(dict['mask_file']), galactic_plane=galactic_plane, null_Gplane=null_Gplane, fixed_distance=fixed_distance, fixed_size=fixed_size, random_fpol=random_fpol, fpol_template=str(dict['fpol_template']))
+	centers, angles, sizes, psi_LH, thetaH, thetaL, fpol0, beta_array, T_array, final_Nfils, filaments_mask, theta_a, vecY = get_FilPop(int(dict['Nfil']), float(dict['theta_LH_RMS']), float(dict['size_ratio']), float(dict['size_scale']), float(dict['slope']), float(dict['eta_eps']), float(dict['eta_fpol']), Bcube, float(dict['size_box']), seed_population, float(dict['alpha']), float(dict['beta']), int(dict['nside']), str(dict['beta_template']), str(dict['T_template']), float(dict['ell_limit']), float(dict['sigma_rho']), dust_template=str(dict['dust_template']), mask_file=str(dict['mask_file']), galactic_plane=galactic_plane, null_Gplane=null_Gplane, fixed_distance=fixed_distance, fixed_size=fixed_size, random_fpol=random_fpol, fpol_template=fpol_template)
 print('finished with population')

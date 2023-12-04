@@ -120,7 +120,7 @@ def get_beta_T(beta_template,T_template,nside,Nfil,centers,sigma_rho):
 	# Fixed T from Planck fit
 	T_array = T_map_nside[0][pixels]
 	return np.ascontiguousarray(beta_array),np.ascontiguousarray(T_array)
-def get_FilPop(Nfil,theta_LH_RMS,size_ratio,size_scale,slope,eta_eps,eta_fpol,Bcube,size,seed,alpha,beta,nside,beta_template,T_template,ell_limit,sigma_rho,dust_template=None,mask_file=None,fixed_distance=False,fixed_size=False,galactic_plane=False,null_Gplane=False,random_fpol=True,fpol_template=None,asymmetry=False,lambda_asymmetry=1.0, kappa_asymmetry=1.0, correct_impossible_angles=False):
+def get_FilPop(Nfil,theta_LH_RMS,size_ratio,size_scale,slope,eta_eps,eta_fpol,Bcube,size,seed,alpha,beta,nside,beta_template,T_template,ell_limit,sigma_rho,dust_template=None,mask_file=None,fixed_distance=False,fixed_size=False,galactic_plane=False,null_Gplane=False,random_fpol=True,fpol_template=None, asymmetry=False, asymmetry_method=None, lambda_asymmetry=1.0, kappa_asymmetry=1.0, center_asymmetry=0.0, sigma_asymmetry=1.0 ):
     Npix_box = int(Bcube.shape[0])
     max_length		= 1.0
     np.random.seed(seed)
@@ -143,7 +143,10 @@ def get_FilPop(Nfil,theta_LH_RMS,size_ratio,size_scale,slope,eta_eps,eta_fpol,Bc
             U = np.random.uniform(0.0,1.0,realNfils)
             #U2 = rng.uniform(0.0,1.0,N)
             theta_LH = norm.ppf(U, loc=0.0, scale=theta_LH_RMS_radians)
-            psi_LH_random = laplace_asymmetric.ppf(U, kappa_asymmetry, loc=0.0, scale=lambda_asymmetry**-1 )
+            if asymmetry_method == 'ALD' or asymmetry_method == None:
+                psi_LH_random = laplace_asymmetric.ppf(U, kappa_asymmetry, loc=0.0, scale=lambda_asymmetry**-1 ) 
+            elif asymmetry_method == 'norm':
+                psi_LH_random = norm.ppf(U, loc=np.radians(center_asymmetry), scale=np.radians(sigma_asymmetry) )
             theta_LH = np.array(sorted(theta_LH,key=np.fabs))
             psi_LH_random = np.array(sorted(psi_LH_random,key=np.fabs))
             # these are the values I want to keep
