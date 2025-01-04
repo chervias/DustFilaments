@@ -127,6 +127,9 @@ def get_FilPop(Nfil,theta_LH_RMS,size_ratio,size_scale,slope,eta_eps,eta_fpol,Bc
     #os.environ["GSL_RNG_SEED"] = str(seed)
     theta_LH_RMS_radians = np.radians(theta_LH_RMS)
     realNfils, centers = get_centers(galactic_plane,null_Gplane,fixed_distance,dust_template,nside,Nfil,size,mask_file) # this method will determine the total number of filaments, which is different if we do the poisson thing
+    sizes = get_sizes(realNfils,fixed_size,size_scale,slope,eta_eps,size_ratio)
+    fpol0 = get_fpol(alpha,beta,realNfils,sizes,size_scale,nside,centers,eta_fpol,random_fpol,fpol_template)
+    beta_array,T_array = get_beta_T(beta_template,T_template,nside,realNfils,centers,sigma_rho)
     if asymmetry:
         # random_vectors will be the small vector x pointing down in the triad system
         #colat, long = hp.vec2ang(centers)
@@ -174,16 +177,11 @@ def get_FilPop(Nfil,theta_LH_RMS,size_ratio,size_scale,slope,eta_eps,eta_fpol,Bc
         random_azimuth = np.random.uniform(0.0,2.0*np.pi,size=(realNfils))
         results = Get_Angles( realNfils, Bcube, Npix_box, random_vectors, random_azimuth, theta_LH, size, centers , theta_LH_RMS_radians)
         (angles, long_vec, psi_LH, thetaH, thetaL, vecY) = results
-    sizes = get_sizes(realNfils,fixed_size,size_scale,slope,eta_eps,size_ratio)
-    #print("I have calculated the centers, angles, sizes")
     mask,theta_a = Reject_Big_Filaments(sizes, thetaL, size_ratio, centers, realNfils, ell_limit, size_scale, eta_eps)
-    fpol0 = get_fpol(alpha,beta,realNfils,sizes,size_scale,nside,centers,eta_fpol,random_fpol,fpol_template)
-    beta_array,T_array = get_beta_T(beta_template,T_template,nside,realNfils,centers,sigma_rho)
     final_Nfils = int(realNfils)
     if asymmetry:
         mask_fils = np.fabs(theta_LH) >= np.fabs(psi_LH)
         return centers, angles, sizes, psi_LH, psi_LH_random, phi_LH, phi_LH_1, phi_LH_2, theta_LH, thetaH, thetaL, fpol0, beta_array, T_array, final_Nfils, mask, theta_a, fn_evaluated, mask_fils
     else:
         return centers, angles, sizes, psi_LH, thetaH, thetaL, fpol0, beta_array, T_array, final_Nfils, mask, theta_a, vecY
-	#return phiLH_arr, fn;
 
