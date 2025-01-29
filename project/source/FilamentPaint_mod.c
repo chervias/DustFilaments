@@ -1230,14 +1230,316 @@ static PyObject *Paint_Filament_Shells(PyObject *self, PyObject *args){
         Py_RETURN_NONE;
     }
 }
+static PyObject *Paint_Filament_Moments(PyObject *self, PyObject *args){
+    /* Getting the elements */
+    PyObject *n = NULL;
+    PyObject *nside = NULL;
+
+    PyObject *Sizes_arr = NULL;
+    PyObject *Centers_arr = NULL;
+    PyObject *Angles_arr = NULL;
+    PyObject *fpol0_arr = NULL;
+    PyObject *thetaH_arr = NULL;
+    PyObject *betadust_arr = NULL;
+    PyObject *Tdust_arr = NULL;
+
+    PyObject *Bcube=NULL;
+    PyObject *size=NULL;
+    PyObject *Npix_magfield=NULL;
+    PyObject *resolution_low=NULL;
+    PyObject *resolution_high=NULL;
+    PyObject *freqs_arr=NULL;
+    PyObject *Nfreqs=NULL;
+    PyObject *tqu_dict=NULL; // this is the dict with the tqu_maps, the keys are the nsides from nside_fixed to 128
+    PyObject *skip_Bcube=NULL;
+    PyObject *rank=NULL;
+
+    int ii, flag;
+    int isInside=1, sucess;
+    double* tqu_return;
+
+    if (!PyArg_ParseTuple(args, "OOOOOOOOOOOOOOOOOOO",&n, &nside, &Sizes_arr, &Centers_arr, &Angles_arr, &fpol0_arr, &thetaH_arr, &betadust_arr, &Tdust_arr, &Bcube, &size, &Npix_magfield,&resolution_low,&resolution_high,&freqs_arr,&Nfreqs,&tqu_dict,&skip_Bcube,&rank))
+        return NULL;
+
+    // Check arrays
+
+    flag = PyArray_IS_C_CONTIGUOUS(Centers_arr);
+    if (!flag){printf("Centers arr from dict. is not contiguous, exiting ...\n");exit(EXIT_FAILURE);}
+    flag = PyArray_IS_C_CONTIGUOUS(Angles_arr);
+    if (!flag){printf("Angles arr from dict. is not contiguous, exiting ...\n");exit(EXIT_FAILURE);}
+    flag = PyArray_IS_C_CONTIGUOUS(Sizes_arr);
+    if (!flag){printf("Sizes arr from dict. is not contiguous, exiting ...\n");exit(EXIT_FAILURE);}
+    flag = PyArray_IS_C_CONTIGUOUS(Bcube);
+    if (!flag){printf("Bcube arr from dict. is not contiguous, exiting ...\n");exit(EXIT_FAILURE);}
+
+    int nside_fixed = (int) PyLong_AsLong(nside);
+    int npix_fixed  = 12*nside_fixed*nside_fixed; // this cannot be over Nside 65k, but it is highly unlikely that we will create a map at that resolution
+    int resol_low_int   = (int) PyLong_AsLong(resolution_low) ;
+    int resol_high_int   = (int) PyLong_AsLong(resolution_high) ;
+    int Npix_magfield_int = (int) PyLong_AsLong(Npix_magfield);
+    double Size_double    =  PyFloat_AsDouble(size);
+    int rank_ = (int) PyLong_AsLong(rank);
+
+    /* We want the filament n*/
+    int n_fil = (int) PyLong_AsLong(n);
+
+    double *Centers_ptr = PyArray_DATA(Centers_arr); // Centers is an array with shape (3)
+    double *Angles_ptr = PyArray_DATA(Angles_arr); // Angles is an array with shape (2)
+    double *Sizes_ptr = PyArray_DATA(Sizes_arr); // Angles is an array with shape (3)
+    double *Bcube_ptr = PyArray_DATA(Bcube);
+
+    /* sample the Bcube at the center of the filament, I always do this */
+    double vec_center[3];
+    double Bcenter[3] ;
+    for(int k=0;k<3;k++) vec_center[k] = Centers_ptr[n_fil*3+k] ;
+
+    FilamentPaint_TrilinearInterpolation(Bcube_ptr, Size_double, Npix_magfield_int, vec_center, Bcenter);
+
+    // Calculate which resolution I need to sample in 50x50 pixels at least. 2^n_nside is the nside necesary for the sampling 
+    // this is for the resolution_low param
+    int n_nside,nside_variable,nside_filament;
+    n_nside = (int) round(log(0.1*resol_low_int*sqrt(PI/3.0)*sqrt(pow(Centers_ptr[n_fil*3+0],2)+pow(Centers_ptr[n_fil*3+1],2)+pow(Centers_ptr[n_fil*3+2],2))/Sizes_ptr[n_fil*3+0])/log(2.0)) ;
+    int nside_variable_low = pow(2,n_nside);
+    // if nside_variable_low is still higher than nside_fixed, then we sample at nside_low
+    if (nside_variable_low > nside_fixed){
+        nside_variable = nside_variable_low;
+    }
+    else{
+        // in the opposite case, we need to calculate a new nside variable at resolution_high
+        n_nside = (int) round(log(0.1*resol_high_int*sqrt(PI/3.0)*sqrt(pow(Centers_ptr[n_fil*3+0],2)+pow(Centers_ptr[n_fil*3+1],2)+pow(Centers_ptr[n_fil*3+2],2))/Sizes_ptr[n_fil*3+0])/log(2.0)) ;
+        nside_variable = pow(2,n_nside);
+    }
+    long npix_variable = 12*nside_variable*nside_variable ;
+    int skip_Bcube_ = (int) PyLong_AsLong(skip_Bcube);
+    // This is for testing if the cuboid is outside the box
+    /* Calculate the rot matrix */
+    double rot_matrix[3*3],inv_rot_matrix[3*3],xyz_vertices[8*3], xyz_normal_to_faces[6*3], xyz_faces[6*4*3], xyz_edges[6*2*3], xyz_edges_unit[6*2*3];
+    FilamentPaint_RotationMatrix(Angles_ptr,n_fil,rot_matrix);
+    FilamentPaint_InvertRotMat(rot_matrix,inv_rot_matrix);
+    /* Calculate the 8 vertices in the xyz coordinates */
+    FilamentPaint_xyzVertices(rot_matrix,Sizes_ptr,Centers_ptr,Size_double,&isInside,xyz_vertices,n_fil);
+    // We skip the big filaments that would be sampled at nside 64 or lower
+    if (isInside==1 && nside_variable >= 128){
+        /* Calculate normal to faces rotated */
+        FilamentPaint_xyzNormalToFaces(rot_matrix,xyz_normal_to_faces);
+        /* Calculate the faces matrix*/
+        FilamentPaint_xyzFaces(xyz_vertices,xyz_faces);
+        // Calculate the edges vectors
+        FilamentPaint_xyzEdgeVectors(xyz_faces,xyz_edges);
+        FilamentPaint_xyzEdgeVectorsUnit(xyz_edges,xyz_edges_unit);
+        // Calculate the polygon in the variable nside map
+        long* ipix = calloc(200000,sizeof(long));
+        if (!ipix){
+            printf("mem failure, could not allocate ipix, exiting \n");
+            exit(EXIT_FAILURE);
+        }
+        int nipix;
+        //double querypolygon_start_time = omp_get_wtime();
+        FilamentPaint_DoQueryPolygon(nside_variable,xyz_vertices,ipix,&nipix,Centers_ptr,&sucess,n_fil);
+        double* localtriad = calloc(nipix*3*3,sizeof(double));
+        if (!localtriad){
+            printf("mem failure, could not allocate localtriad, exiting \n");
+            exit(EXIT_FAILURE);
+        }
+        //double querypolygon_run_time = omp_get_wtime() - querypolygon_start_time;
+        if(sucess == 0){
+            free(ipix);
+            free(localtriad);
+            PyErr_SetString(PyExc_TypeError, "Oh no!");
+            return (PyObject *) NULL;
+        }
+        // Cycle through each of the pixels in ipix
+        //printf("Filament %i has %u pixels in a nside=%i pixelization \n",n_fil,nipix,nside_variable) ;
+        // Im going to parallelize the filling of the local triad, I'll time it
+        //double localtriad_start_time = omp_get_wtime();
+        FilamentPaint_DoLocalTriad(ipix,nipix,nside_variable,localtriad);
+        //double localtriad_run_time = omp_get_wtime() - localtriad_start_time;
+        // Now I won't use a full size map at nside_variable, because it would be a waste of memory. Instead, I will map the integ result into the nested nside_fixed map
+
+        // Calculate the sed factor
+        double fpol0 = PyFloat_AsDouble(fpol0_arr);
+        double thetaH = PyFloat_AsDouble(thetaH_arr);
+        double betadust = PyFloat_AsDouble(betadust_arr);
+        double Tdust = PyFloat_AsDouble(Tdust_arr);
+        double *freqs_arr_ = PyArray_DATA(freqs_arr);
+        int Nfreqs_ = (int) PyLong_AsLong(Nfreqs);
+        double x_d_353 = H_PLANCK*353.0*1.e9/(K_BOLTZ*Tdust);
+        // The conversion is 
+        double thermo_2_rj_353 = 0.0774279729042878 ; // this is fixed for 353 GHz
+        // the sed factor for 353 GHz
+        double sed_factor_353 = pow(353*1e9,betadust+1.0)/(exp(x_d_353)-1.0) / thermo_2_rj_353 ;
+        double *sed_factor_nu = calloc(Nfreqs_,sizeof(double));
+        for(int n=0;n<Nfreqs_;n++){
+            double x_d_nu = H_PLANCK*freqs_arr_[n]*1.e9/(K_BOLTZ*Tdust);
+            double x_cmb = H_PLANCK*freqs_arr_[n]*1.0e9/(K_BOLTZ*T_CMB);
+            double thermo_2_rj = pow(x_cmb,2) * exp(x_cmb) / pow(exp(x_cmb) - 1.0,2) ; // multiplying by this factor transform thermo 2 RJ units, divide for the reverse conversion
+            sed_factor_nu[n] = pow(freqs_arr_[n]*1e9,betadust+1.0)/(exp(x_d_nu)-1.0) / thermo_2_rj  / sed_factor_353 ;
+        }
+        // Now I will run FilamentPaint_CalculateDistances and FilamentPaint_RiemannIntegrator over the tqumap itself
+        if (nside_fixed > nside_variable){
+            // This array will be the tqu map of the single filament
+            tqu_return = calloc(((int) npix_variable) * 3, sizeof(double));
+            // This means the filament is bigger than the fixed resolution and we have to upgrade the map
+            // we will have to cycle over all children pixels in the nside_fixed pixelization, assigning the same value to each
+            nside_filament = nside_variable; 
+            PyObject *nside_pointer = PyLong_FromLong((long) nside_variable);
+            PyObject *tqu_array = PyDict_GetItem(tqu_dict, nside_pointer);
+            if (!tqu_array){
+                printf("Nside not in the tqu dictionary, exiting ...\n");
+                exit(EXIT_FAILURE);
+            }
+            flag = PyArray_IS_C_CONTIGUOUS(tqu_array);
+            if (!flag){printf("Nside arr from dict. is not contiguous, exiting ...\n");exit(EXIT_FAILURE);}
+            Py_INCREF(tqu_array);
+            Py_DECREF(nside_pointer);
+            double *tqu_array_c = PyArray_DATA(tqu_array);
+            Py_DECREF(tqu_array);
+            //double pixelcycle_start_time = omp_get_wtime();
+            #pragma omp parallel 
+            {
+            #pragma omp for schedule(static)
+            for(ii=0;ii<nipix;ii++){
+                int jj,skip_pix=1,nn; // skip_pixel will be True at the beggining, and FilamentPaint_CalculateDistances will change it to False if we find the intersection
+                int index_pix = (int) ipix[ii];
+                double rDistances[2];
+                double integ[3];
+                FilamentPaint_CalculateDistances(xyz_normal_to_faces,xyz_faces,xyz_edges,xyz_edges_unit,ii,localtriad,rDistances,&skip_pix);
+                if (skip_pix == 1){
+                    // if skip_pix is still True, then we could not find the intersection with the face and we skip this particular pixel
+                    printf("There is a pixel for which we couldn't find the intersection with the filament box, we skip it \n") ;
+                    continue;
+                }
+                FilamentPaint_RiemannIntegrator(rDistances[0],rDistances[1],inv_rot_matrix,ii,localtriad,Centers_ptr,Sizes_ptr,Bcube_ptr,Size_double,Npix_magfield_int,integ,fpol0,thetaH,n_fil,skip_Bcube_,Bcenter);
+                // set the integ values on to the numpy array whose pointer is tqu_array, which is a 2 dimensional array with shape (3,12*nside**2)
+                if (index_pix<0 || index_pix>npix_variable-1){printf("The pixel %i arr is invalid in pixelization Nside=%i, exiting (nside_fixed>nside_var)...\n",index_pix,nside_variable);exit(EXIT_FAILURE);}
+                // tqu_array_c will have shape (Nfreqs,3,Npixels)
+                for(jj=0;jj<3;jj++){
+                    for(nn=0;nn<Nfreqs_;nn++) tqu_array_c[ nn*3*((int) npix_variable) + jj*((int) npix_variable) + index_pix] += sed_factor_nu[nn] * integ[jj];
+                    tqu_return[index_pix*3 + jj] = integ[jj];
+                }
+            }
+            }
+        }
+        else{
+            // else, we are degrading or copying the same
+            if (nside_fixed == nside_variable){
+                // This array will be the tqu map of the single filament
+                tqu_return = calloc(npix_fixed * 3, sizeof(double));
+                // this means we modify the numpy array with the key nside_fixed
+                PyObject *nside_pointer = PyLong_FromLong((long) nside_fixed);
+                PyObject *tqu_array = PyDict_GetItem(tqu_dict, nside_pointer);
+                if (!tqu_array){
+                    printf("Nside not in the tqu dictionary, exiting ...\n");
+                    exit(EXIT_FAILURE);
+                }
+                flag = PyArray_IS_C_CONTIGUOUS(tqu_array);
+                if (!flag){printf("Nside arr from dict. is not contiguous, exiting ...\n");exit(EXIT_FAILURE);}
+                Py_INCREF(tqu_array);
+                Py_DECREF(nside_pointer);
+                double *tqu_array_c = PyArray_DATA(tqu_array);
+                Py_DECREF(tqu_array);
+                //double pixelcycle_start_time = omp_get_wtime();
+                #pragma omp parallel
+                {
+                #pragma omp for schedule(static)
+                for(ii=0;ii<nipix;ii++){
+                    int jj, skip_pix=1,nn;
+                    int index_pix = (int) ipix[ii];
+                    double rDistances[2];
+                    double integ[3];
+                    FilamentPaint_CalculateDistances(xyz_normal_to_faces,xyz_faces,xyz_edges,xyz_edges_unit,ii,localtriad,rDistances,&skip_pix);
+					if (skip_pix == 1){
+                        // if skip_pix is still True, then we could not find the intersection with the face and we skip this particular pixel
+                        printf("There is a pixel for which we couldn't find the intersection with the filament box, we skip it \n") ;
+                        continue;
+                    }
+                    FilamentPaint_RiemannIntegrator(rDistances[0],rDistances[1],inv_rot_matrix,ii,localtriad,Centers_ptr,Sizes_ptr,Bcube_ptr,Size_double,Npix_magfield_int,integ,fpol0,thetaH,n_fil,skip_Bcube_,Bcenter);
+                    // set the integ values on to the numpy array whose pointer is tqu_array, which is a 2 dimensional array with shape (3,12*nside**2)
+                    // check that index_pix has a valid range
+                    if (index_pix<0 || index_pix>npix_fixed-1){printf("The pixel %i arr is invalid in pixelization Nside=%i, exiting (nside_fixed=nside_var) ...\n",index_pix,nside_fixed);exit(EXIT_FAILURE);}
+                    for(jj=0;jj<3;jj++){
+                        for(nn=0;nn<Nfreqs_;nn++) tqu_array_c[ nn*3*npix_fixed + jj*npix_fixed + index_pix] += sed_factor_nu[nn] * integ[jj];
+                        tqu_return[index_pix * 3 + jj] = integ[jj];
+                    }
+                }
+                }
+            }
+            else if (nside_fixed < nside_variable){
+                // This array will be the tqu map of the single filament
+                tqu_return = calloc(npix_fixed * 3, sizeof(double));
+                // This means the filament is smaller than the fixed resolution and we have to degrade the map
+                // step will determine how many steps in nside I went, e.g. from 2048 to 8192 I went 2 steps
+                int step = (int)(log(nside_variable)/log(2.0) - log(nside_fixed)/log(2.0)) ;
+                // This is for filaments sampled at a resolution > nside_fixed, so we will acumulate them in the nside_fixed numpy array
+                PyObject *nside_pointer = PyLong_FromLong((long) nside_fixed);
+                PyObject *tqu_array = PyDict_GetItem(tqu_dict, nside_pointer);
+                if (!tqu_array){
+                    printf("Nside not in the tqu dictionary, exiting ...\n");
+                    exit(EXIT_FAILURE);
+                }
+                flag = PyArray_IS_C_CONTIGUOUS(tqu_array);
+                if (!flag){printf("Nside arr from dict. is not contiguous, exiting ...\n");exit(EXIT_FAILURE);}
+                Py_INCREF(tqu_array);
+                Py_DECREF(nside_pointer);
+                double *tqu_array_c = PyArray_DATA(tqu_array);
+                Py_DECREF(tqu_array);
+                //double pixelcycle_start_time = omp_get_wtime();
+                #pragma omp parallel
+                {
+                #pragma omp for schedule(static)
+                for(ii=0;ii<nipix;ii++){
+                    int jj, skip_pix = 1,nn;
+                    long index_parent_pix_long = ipix[ii] >> 2*step ; // this has to be a long, since we could have Nside >= 65k
+                    int index_parent_pixel = (int) index_parent_pix_long ; // this can be a int, since nside_fixed will not be >=65k
+                    double rDistances[2];
+                    double integ[3];
+                    FilamentPaint_CalculateDistances(xyz_normal_to_faces,xyz_faces,xyz_edges,xyz_edges_unit,ii,localtriad,rDistances,&skip_pix);
+                    if (skip_pix == 1){
+                        // if skip_pix is still True, then we could not find the intersection with the face and we skip this particular pixel
+                        printf("There is a pixel for which we couldn't find the intersection with the filament box, we skip it \n") ;
+                        continue;
+                    }
+                    FilamentPaint_RiemannIntegrator(rDistances[0],rDistances[1],inv_rot_matrix,ii,localtriad,Centers_ptr,Sizes_ptr,Bcube_ptr,Size_double,Npix_magfield_int,integ,fpol0,thetaH,n_fil,skip_Bcube_,Bcenter);
+                    // set the integ values on to the numpy array whose pointer is tqu_array, which is a 2 dimensional array with shape (3,12*nside**2)
+                    // we have to protect this with a omp critical, since several small pixels can end up in the same big pixel = race condition
+                    #pragma omp critical
+                    {
+                        // check that index_parent_pixel has a valid range
+                        if (index_parent_pixel<0 || index_parent_pixel>npix_fixed-1){printf("The pixel %i arr is invalid in pixelization Nside=%i, exiting (nside_fixed<nside_var) ...\n",index_parent_pixel,nside_fixed);exit(EXIT_FAILURE);}
+                        for(jj=0;jj<3;jj++){
+                            for(nn=0;nn<Nfreqs_;nn++) tqu_array_c[ nn*3*npix_fixed + jj*npix_fixed + index_parent_pixel] += sed_factor_nu[nn] * integ[jj] / pow(4,step) ;
+                            tqu_return[index_parent_pixel*3 + jj] += integ[jj] / pow(4,step) ;
+                        }
+                    }
+                }
+                }
+            }
+            nside_filament = nside_fixed; // in both cases the nside of the filament will be nside_fixed
+        }
+        free(ipix);
+        free(localtriad);
+        free(sed_factor_nu);
+
+        // we will return the tqu_return array
+        npy_intp npy_shape_tqu_return[2] = {12*nside_filament*nside_filament, 3};
+        PyObject *arr_tqu_return = PyArray_SimpleNewFromData(2,npy_shape_tqu_return, NPY_DOUBLE, tqu_return);
+        PyArray_ENABLEFLAGS((PyArrayObject *)arr_tqu_return, NPY_OWNDATA);
+        return(arr_tqu_return);
+    }// this is the end of (isInside==1),
+    else{
+        // this means that the box overflows the volume, so we just exit, we don't do anything else
+        Py_RETURN_NONE;
+    }
+}
 static PyMethodDef FilamentPaintMethods[] = {
-  {"Paint_Filament", Paint_Filament, METH_VARARGS,NULL},
-  {"Paint_Filament_Shells", Paint_Filament_Shells, METH_VARARGS,NULL},
-  {"Get_Angles", Get_Angles, METH_VARARGS,NULL},
-  {"Get_Angles_Asymmetry", Get_Angles_Asymmetry, METH_VARARGS, NULL},
-  {"Permutations", permutations, METH_VARARGS, NULL},
-  {"Reject_Big_Filaments", Reject_Big_Filaments, METH_VARARGS,NULL},
- {NULL, NULL, 0, NULL}        /* Sentinel */
+{"Paint_Filament", Paint_Filament, METH_VARARGS,NULL},
+{"Paint_Filament_Shells", Paint_Filament_Shells, METH_VARARGS,NULL},
+{"Get_Angles", Get_Angles, METH_VARARGS,NULL},
+{"Get_Angles_Asymmetry", Get_Angles_Asymmetry, METH_VARARGS, NULL},
+{"Permutations", permutations, METH_VARARGS, NULL},
+{"Reject_Big_Filaments", Reject_Big_Filaments, METH_VARARGS,NULL},
+{"Paint_Filament_Moments", Paint_Filament_Moments, METH_VARARGS, NULL},
+{NULL, NULL, 0, NULL}        /* Sentinel */
 };
 
 static struct PyModuleDef FilamentPaint_module = {
