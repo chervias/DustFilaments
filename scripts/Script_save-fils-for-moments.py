@@ -281,6 +281,8 @@ if True:
             print("Rank:%i, Error in filament rank index=%i general index=%i, skipping"%(rank,n_rank,n_general))
             counter += 1
             continue
+    # each rank will write its list of fils info
+    pkl.dump(list_fil_info, open(output_tqumap+'.rank%03i.pkl'%rank, 'wb'))
     
     start_time_second = time.time_ns()
     if rank==0:
@@ -345,5 +347,3 @@ if True:
         print('The time for the second part is %f s\n'%(second_part_time/1e9))
         print('The total time of execution is %f s\n'%((time.time_ns() - start_time_absolute)/1e9))
         #f.close()
-    # each rank will write its list of fils info
-    pkl.dump(list_fil_info, open(output_tqumap+'.rank%03i.pkl'%rank, 'wb'))
