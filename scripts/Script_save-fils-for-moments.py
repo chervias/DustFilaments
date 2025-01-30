@@ -123,8 +123,8 @@ rank = shared_comm.Get_rank()
 
 start_time_first = time.time_ns()
 
-if rank==0:
-	output_tqumap = '%s/DustFilaments_TQU_%s'%(str(dict['outdir']),str(dict['label']))
+
+output_tqumap = '%s/DustFilaments_TQU_%s'%(str(dict['outdir']),str(dict['label']))
 
 size_magfield = (Npixels_magfield,Npixels_magfield,Npixels_magfield,3)
 
