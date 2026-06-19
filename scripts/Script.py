@@ -63,7 +63,7 @@ def main():
     size_magfield = (params["Npixels_magfield"],params["Npixels_magfield"],params["Npixels_magfield"],3)
 
     if rank == 0:
-    	Bcube = get_MagField(args['size_box'],params["Npixels_magfield"],params["seed_magfield"],path_cube=params['path_Bcube'],only_path=params["only_path"])
+    	Bcube = get_MagField(params['size_box'],params["Npixels_magfield"],params["seed_magfield"],path_cube=params['path_Bcube'],only_path=params["only_path"])
     else:
     	Bcube = np.empty(size_magfield, dtype=np.double)
     shared_comm.Bcast(Bcube, root=0)
@@ -72,15 +72,14 @@ def main():
     if rank==0:
         if params["asymmetry"]:
             if params["asymmetry_method"]=='ALD':
-                centers,angles,sizes,psi_LH, psi_LH_random,phi_LH,phi_LH_1,phi_LH_2,theta_LH,thetaH,thetaL,fpol0,beta_array,T_array,final_Nfils, filaments_mask, theta_a, fn_evaluated, mask_fils = get_FilPop(int(params['Nfil']), float(params['theta_LH_RMS']), float(params['size_ratio']), float(params['size_scale']), float(params['slope']), float(params['eta_eps']), float(params['eta_fpol']), Bcube, float(params['size_box']), seed_population, float(params['alpha']), float(params['beta']), int(params['nside']), str(params['beta_template']), str(params['T_template']), float(params['ell_limit']), float(params['sigma_rho']), dust_template=str(params['dust_template']), mask_file=str(params['mask_file']), galactic_plane=params["galactic_plane"], null_Gplane=params["null_Gplane"], fixed_distance=params["fixed_distance"], fixed_size=params["fixed_size"], random_fpol=params["random_fpol"], fpol_template=params["fpol_template"], asymmetry=params["asymmetry"], asymmetry_method=params["asymmetry_method"], kappa_asymmetry=float(params['kappa_asymmetry']), lambda_asymmetry=float(params['lambda_asymmetry']),)
+                centers,angles,sizes,psi_LH, psi_LH_random,phi_LH,phi_LH_1,phi_LH_2,theta_LH,thetaH,thetaL,fpol0,beta_array,T_array,final_Nfils, filaments_mask, theta_a, fn_evaluated, mask_fils = get_FilPop(int(params['Nfil']), float(params['theta_LH_RMS']), float(params['size_ratio']), float(params['size_scale']), float(params['slope']), float(params['eta_eps']), float(params['eta_fpol']), Bcube, float(params['size_box']), params["seed_population"], float(params['alpha']), float(params['beta']), int(params['nside']), str(params['beta_template']), str(params['T_template']), float(params['ell_limit']), float(params['sigma_rho']), dust_template=str(params['dust_template']), mask_file=str(params['mask_file']), galactic_plane=params["galactic_plane"], null_Gplane=params["null_Gplane"], fixed_distance=params["fixed_distance"], fixed_size=params["fixed_size"], random_fpol=params["random_fpol"], fpol_template=params["fpol_template"], asymmetry=params["asymmetry"], asymmetry_method=params["asymmetry_method"], kappa_asymmetry=float(params['kappa_asymmetry']), lambda_asymmetry=float(params['lambda_asymmetry']),)
             elif params["asymmetry_method"]=='norm':
-                centers,angles,sizes,psi_LH, psi_LH_random,phi_LH,phi_LH_1,phi_LH_2,theta_LH,thetaH,thetaL,fpol0,beta_array,T_array,final_Nfils, filaments_mask, theta_a, fn_evaluated, mask_fils = get_FilPop(int(params['Nfil']), float(params['theta_LH_RMS']), float(params['size_ratio']), float(params['size_scale']), float(params['slope']), float(params['eta_eps']), float(params['eta_fpol']), Bcube, float(params['size_box']), seed_population, float(params['alpha']), float(params['beta']), int(params['nside']), str(params['beta_template']), str(params['T_template']), float(params['ell_limit']), float(params['sigma_rho']), dust_template=str(params['dust_template']), mask_file=str(params['mask_file']), galactic_plane=params["galactic_plane"], null_Gplane=params["null_Gplane"], fixed_distance=params["fixed_distance"], fixed_size=params["fixed_size"], random_fpol=params["random_fpol"], fpol_template=params["fpol_template"], asymmetry=params["asymmetry"], asymmetry_method=params["asymmetry_method"], center_asymmetry=float(params['center_asymmetry']), sigma_asymmetry=float(params['sigma_asymmetry']),)
+                centers,angles,sizes,psi_LH, psi_LH_random,phi_LH,phi_LH_1,phi_LH_2,theta_LH,thetaH,thetaL,fpol0,beta_array,T_array,final_Nfils, filaments_mask, theta_a, fn_evaluated, mask_fils = get_FilPop(int(params['Nfil']), float(params['theta_LH_RMS']), float(params['size_ratio']), float(params['size_scale']), float(params['slope']), float(params['eta_eps']), float(params['eta_fpol']), Bcube, float(params['size_box']), params["seed_population"], float(params['alpha']), float(params['beta']), int(params['nside']), str(params['beta_template']), str(params['T_template']), float(params['ell_limit']), float(params['sigma_rho']), dust_template=str(params['dust_template']), mask_file=str(params['mask_file']), galactic_plane=params["galactic_plane"], null_Gplane=params["null_Gplane"], fixed_distance=params["fixed_distance"], fixed_size=params["fixed_size"], random_fpol=params["random_fpol"], fpol_template=params["fpol_template"], asymmetry=params["asymmetry"], asymmetry_method=params["asymmetry_method"], center_asymmetry=float(params['center_asymmetry']), sigma_asymmetry=float(params['sigma_asymmetry']),)
             else:
                 exit('No asymmetry method was chosen, exiting.')
         else:
-            centers, angles, sizes, psi_LH, thetaH, thetaL, fpol0, beta_array, T_array, final_Nfils, filaments_mask, theta_a, vecY = get_FilPop(int(params['Nfil']), float(params['theta_LH_RMS']), float(params['size_ratio']), float(params['size_scale']), float(params['slope']), float(params['eta_eps']), float(params['eta_fpol']), Bcube, float(params['size_box']), seed_population, float(params['alpha']), float(params['beta']), int(params['nside']), str(params['beta_template']), str(params['T_template']), float(params['ell_limit']), float(params['sigma_rho']), dust_template=str(params['dust_template']), mask_file=str(params['mask_file']), galactic_plane=params["galactic_plane"], null_Gplane=params["null_Gplane"], fixed_distance=params["fixed_distance"], fixed_size=params["fixed_size"], random_fpol=params["random_fpol"], fpol_template=params["fpol_template"])
+            centers, angles, sizes, psi_LH, thetaH, thetaL, fpol0, beta_array, T_array, final_Nfils, filaments_mask, theta_a, vecY = get_FilPop(int(params['Nfil']), float(params['theta_LH_RMS']), float(params['size_ratio']), float(params['size_scale']), float(params['slope']), float(params['eta_eps']), float(params['eta_fpol']), Bcube, float(params['size_box']), params["seed_population"], float(params['alpha']), float(params['beta']), int(params['nside']), str(params['beta_template']), str(params['T_template']), float(params['ell_limit']), float(params['sigma_rho']), dust_template=str(params['dust_template']), mask_file=str(params['mask_file']), galactic_plane=params["galactic_plane"], null_Gplane=params["null_Gplane"], fixed_distance=params["fixed_distance"], fixed_size=params["fixed_size"], random_fpol=params["random_fpol"], fpol_template=params["fpol_template"])
         print('finished with population')
-    return ;
     # Now I split the total number of filaments in the ranks
     if rank == 0:
     	# create the numpy array of ints
@@ -182,7 +181,7 @@ def main():
     
     	# this tqu_total must be a dictionary, where the keys are the Nsides from 32 to nside
     	tqu_total = {}
-    	nside_moving = int(dict['nside'])
+    	nside_moving = int(params['nside'])
     	while nside_moving >= 128:
     		tqu_total[nside_moving] = np.ascontiguousarray(np.zeros((Nfreqs,3,12*nside_moving**2),dtype=np.double))
     		# this way you get 2048 at the beginning, then 1024, then 512, etc. all the way to 128
@@ -195,25 +194,25 @@ def main():
     
     	for n_rank,n_general in enumerate(fils_indices_split_rank):
     		# we need to decide what is the size of the a filament. We will decide it is 2*Theta_a, which is one total length (remember that La and Lb are semi-axes)
-    		if np.pi/theta_a_rank[n_rank] < float(dict['ell_limit']):
+    		if np.pi/theta_a_rank[n_rank] < float(params['ell_limit']):
     			continue
-    		try:
-    			time_start = time.time_ns()
-    			Paint_Filament(n_rank,int(dict['nside']),sizes_rank,centers_rank,angles_rank,float(fpol0_rank[n_rank]),float(thetaH_rank[n_rank]),float(beta_array_rank[n_rank]),float(T_array_rank[n_rank]),Bcube,float(dict['size_box']),Npixels_magfield,int(dict['resolution_low']),int(dict['resolution_high']),freq_array,Nfreqs,tqu_total,skip_Bcube,rank)
-    			time_end = time.time_ns()
-    			# divide by 1e6 to transform to ms
-    			rank_time += (time_end-time_start)/1e6
-    		except:
-    			print("Rank:%i, Error in filament rank index=%i general index=%i, skipping"%(rank,n_rank,n_general))
-    			counter += 1
-    			continue
+    		#try:
+    		time_start = time.time_ns()
+    		Paint_Filament(n_rank,int(params['nside']),sizes_rank,centers_rank,angles_rank,float(fpol0_rank[n_rank]),float(thetaH_rank[n_rank]),float(beta_array_rank[n_rank]),float(T_array_rank[n_rank]),Bcube,float(params['size_box']),params["Npixels_magfield"],int(params['resolution_low']),int(params['resolution_high']),freq_array,Nfreqs,tqu_total,params["skip_Bcube"],rank)
+    		time_end = time.time_ns()
+    		# divide by 1e6 to transform to ms
+    		rank_time += (time_end-time_start)/1e6
+    		#except:
+    		#	print("Rank:%i, Error in filament rank index=%i general index=%i, skipping"%(rank,n_rank,n_general))
+    		#	counter += 1
+    		#	continue
     
     	start_time_second = time.time_ns()
     	if rank==0:
     		# only processor 0 will actually get the data
     		# tqu_final must also be a dict like tqu_total
     		tqu_final = {}
-    		nside_moving = int(dict['nside'])
+    		nside_moving = int(params['nside'])
     		while nside_moving >= 128:
     			tqu_final[nside_moving] = np.zeros((Nfreqs,3,12*nside_moving**2),dtype=np.double)
     			# this way you get 2048 at the beginning, then 1024, then 512, etc. all the way to 128
@@ -221,7 +220,7 @@ def main():
     	else:
     		# tqu_final must also be a dict like tqu_total
     		tqu_final = {}
-    		nside_moving = int(dict['nside'])
+    		nside_moving = int(params['nside'])
     		while nside_moving >= 128:
     			tqu_final[nside_moving] = None
     			# this way you get 2048 at the beginning, then 1024, then 512, etc. all the way to 128
@@ -241,9 +240,9 @@ def main():
     	if rank==0:
     		# I need to upgrade the resolution for every nside between 128 and nside
     		for n in range(Nfreqs):
-    			tqu_final_final = np.zeros((3,12*int(dict['nside'])**2),dtype=np.double)
+    			tqu_final_final = np.zeros((3,12*int(params['nside'])**2),dtype=np.double)
     			for nside_var,tqumap in tqu_final.items():
-    				if nside_var == int(dict['nside']):
+    				if nside_var == int(params['nside']):
     					# in this case only sum into tqu_final_final, do not upgrade
     					# I keep a copy of this map also
     					tqu_final_final += tqumap[n]
@@ -253,10 +252,10 @@ def main():
     					tqumap_ring = hp.reorder(tqumap[n],n2r=True)
     					(almT, almE, almB) = hp.map2alm(tqumap_ring,pol=True,lmax=(3*nside_var))
     					fwhm = np.sqrt(np.pi/3.0)/nside_var
-    					almT_conv = hp.almxfl(almT, hp.gauss_beam(fwhm,lmax=(4*int(dict['nside']))), inplace=False)
-    					almE_conv = hp.almxfl(almE, hp.gauss_beam(fwhm,lmax=(4*int(dict['nside']))), inplace=False)
-    					almB_conv = hp.almxfl(almB, hp.gauss_beam(fwhm,lmax=(4*int(dict['nside']))), inplace=False)
-    					tqumap_nside = hp.alm2map((almT_conv,almE_conv,almB_conv),int(dict['nside']),pol=True)
+    					almT_conv = hp.almxfl(almT, hp.gauss_beam(fwhm,lmax=(4*int(params['nside']))), inplace=False)
+    					almE_conv = hp.almxfl(almE, hp.gauss_beam(fwhm,lmax=(4*int(params['nside']))), inplace=False)
+    					almB_conv = hp.almxfl(almB, hp.gauss_beam(fwhm,lmax=(4*int(params['nside']))), inplace=False)
+    					tqumap_nside = hp.alm2map((almT_conv,almE_conv,almB_conv),int(params['nside']),pol=True)
     					tqumap_nside_nest = hp.reorder(tqumap_nside,r2n=True)
     					tqu_final_final += tqumap_nside_nest
     			# I save the final map at freq nn
