@@ -948,7 +948,7 @@ static PyObject *Paint_Filament_bandpass(PyObject *self, PyObject *args){
     int ii, flag;
     int isInside=1, sucess;
 
-    if (!PyArg_ParseTuple(args, "OOOOOOOOOOOOOOOOOOO",&n, &nside, &Sizes_arr, &Centers_arr, &Angles_arr, &fpol0_arr, &thetaH_arr, &betadust_arr, &Tdust_arr, &Bandpass, &Bcube, &size, &Npix_magfield,&resolution_low,&resolution_high,&Nfreqs,&tqu_dict,&skip_Bcube,&rank))
+    if (!PyArg_ParseTuple(args, "OOOOOOOOOOOOOOOOOOOO",&n, &nside, &Sizes_arr, &Centers_arr, &Angles_arr, &fpol0_arr, &thetaH_arr, &betadust_arr, &Tdust_arr, &Bandpass, &N_individual_freqs, &Bcube, &size, &Npix_magfield,&resolution_low,&resolution_high,&Nfreqs,&tqu_dict,&skip_Bcube,&rank))
         return NULL;
 
     // Check arrays

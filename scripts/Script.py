@@ -6,7 +6,7 @@ import healpy as hp
 from mpi4py import MPI
 from DustFilaments.MagField import get_MagField
 from DustFilaments.FilPop import get_FilPop
-from DustFilaments.FilamentPaint import Paint_Filament
+from DustFilaments.FilamentPaint import Paint_Filament,Paint_Filament_bandpass
 import time
 
 def main():
@@ -27,6 +27,7 @@ def main():
 		"asymmetry": False,
 		"asymmetry_method": None,
 		"fpol_template": None,
+		"bandpass": None,
 	}
 	
 	parser = argparse.ArgumentParser(description="Load parameters from a YAML file with defaults.")
@@ -191,21 +192,30 @@ def main():
 	
 		counter = 0
 		rank_time = 0.0
-	
+
+		#prepare bandpass if its not None
+		if params['bandpass']:
+			if rank==0: print("Using bandpasses")
+			bandpass = np.load(params['bandpass']).astype(np.float64)
+			N_freqs_individual = int(bandpass.shape[1])
+
 		for n_rank,n_general in enumerate(fils_indices_split_rank):
 			# we need to decide what is the size of the a filament. We will decide it is 2*Theta_a, which is one total length (remember that La and Lb are semi-axes)
 			if np.pi/theta_a_rank[n_rank] < float(params['ell_limit']):
 				continue
 			try:
-			    time_start = time.time_ns()
-			    Paint_Filament(n_rank,int(params['nside']),sizes_rank,centers_rank,angles_rank,float(fpol0_rank[n_rank]),float(thetaH_rank[n_rank]),float(beta_array_rank[n_rank]),float(T_array_rank[n_rank]),Bcube,float(params['size_box']),params["Npixels_magfield"],int(params['resolution_low']),int(params['resolution_high']),freq_array,Nfreqs,tqu_total,params["skip_Bcube"],rank)
-			    time_end = time.time_ns()
+				time_start = time.time_ns()
+				if params['bandpass']:
+					Paint_Filament_bandpass(n_rank,int(params['nside']),sizes_rank,centers_rank,angles_rank,float(fpol0_rank[n_rank]),float(thetaH_rank[n_rank]),float(beta_array_rank[n_rank]),float(T_array_rank[n_rank]),bandpass,N_freqs_individual,Bcube,float(params['size_box']),params["Npixels_magfield"],int(params['resolution_low']),int(params['resolution_high']),Nfreqs,tqu_total,params["skip_Bcube"],rank)
+				else:
+					Paint_Filament(n_rank,int(params['nside']),sizes_rank,centers_rank,angles_rank,float(fpol0_rank[n_rank]),float(thetaH_rank[n_rank]),float(beta_array_rank[n_rank]),float(T_array_rank[n_rank]),Bcube,float(params['size_box']),params["Npixels_magfield"],int(params['resolution_low']),int(params['resolution_high']),freq_array,Nfreqs,tqu_total,params["skip_Bcube"],rank)
+				time_end = time.time_ns()
 			    # divide by 1e6 to transform to ms
-			    rank_time += (time_end-time_start)/1e6
+				rank_time += (time_end-time_start)/1e6
 			except:
-			    print("Rank:%i, Error in filament rank index=%i general index=%i, skipping"%(rank,n_rank,n_general))
-			    counter += 1
-			    continue
+				print("Rank:%i, Error in filament rank index=%i general index=%i, skipping"%(rank,n_rank,n_general))
+				counter += 1
+				continue
 	
 		start_time_second = time.time_ns()
 		if rank==0:
